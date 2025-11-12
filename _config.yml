@@ -23,7 +23,7 @@ twitter_username: none
 github_username:  Abiel-Almonte
 
 # Minimal Mistakes theme settings
-minimal_mistakes_skin: "contrast" # "air", "aqua", "contrast", "dark", "dirt", "neon", "mint", "plum", "sunrise"
+minimal_mistakes_skin: "dark" # "air", "aqua", "contrast", "dark", "dirt", "neon", "mint", "plum", "sunrise"
 
 # Site Author
 author:
