@@ -25,9 +25,7 @@ permalink: /
 ![](IMG_5319.jpg)
 {: .profile-img}
 
-# Hello, I'm Abiel
-
-I am an undergraduate computer engineer at Florida International University.
+Hello, I'm Abiel I am an undergraduate computer engineer at Florida International University.
 
 My primary focus lies in hardware-aware programming to accelerate machine learning inference. Often utilizing CUDA, C++, and PyTorch alongside profiling tools to guide my optimizations.
 
