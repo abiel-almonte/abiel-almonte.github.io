@@ -25,11 +25,13 @@ permalink: /
 ![](IMG_5319.jpg)
 {: .profile-img}
 
-Hello, I'm Abiel. I am an undergraduate computer engineer at Florida International University.
+Hello, I'm Abiel. I am an undergraduate computer engineer at FIU.
 
 My primary focus lies in hardware-aware programming to accelerate machine learning inference. Often utilizing CUDA, C++, and PyTorch alongside profiling tools to guide my optimizations.
 
 I am motivated by the human experience my optimizations bring to the end-user and the real-time feedback loop of collaborating on unsolved problems, especially in real-time systems for embodied AI.
+
+Previously interned at NVIDIA and FIU ARC, building LLM serving, retrieval, and deployment infrastructure, as well as experimenting with compiler front-ends for parsing domain-specific languages.
 
 ## Activity
 - Currently: I'm working on a project for real-time 3D reconstruction. Providing [Splat-SLAM](https://github.com/google-research/Splat-SLAM) with a production-grade, low-latency infrastructure, from camera drivers to visualization.
