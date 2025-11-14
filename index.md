@@ -1,6 +1,9 @@
 ---
 layout: splash
 permalink: /
+
+feature_row:
+    image_path: "IMG_5319.jpg"
 ---
 
 Hello, I'm Abiel. I am an undergraduate computer engineer at Florida International University.
