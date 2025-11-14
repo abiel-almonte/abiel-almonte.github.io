@@ -32,7 +32,7 @@ My primary focus lies in hardware-aware programming to accelerate machine learni
 I am motivated by the human experience my optimizations bring to the end-user and the real-time feedback loop of collaborating on unsolved problems, especially in real-time systems for embodied AI.
 
 ### Background
-<small>Previously interned at **NVIDIA** on the [ChipNemo](https://research.nvidia.com/publication/2023-10_chipnemo-domain-adapted-llms-chip-design) team. I also worked at FIU’s **Applied Research Center** under [Dr. Himanshu Upadhyay](https://arc.fiu.edu/staff/himanshu-upadhyay/). In both experiences I built LLM serving, retrieval, and deployment infrastructure and experimented with compiler front-ends for domain-specific languages.</small>
+<small>Previously interned at **NVIDIA** on the [ChipNemo](https://research.nvidia.com/publication/2023-10_chipnemo-domain-adapted-llms-chip-design) team. I also worked at FIU’s **Applied Research Center** under [Dr. Himanshu Upadhyay](https://arc.fiu.edu/staff/himanshu-upadhyay/). In both roles, I built LLM serving, retrieval, and deployment infrastructure and experimented with compiler front-ends for domain-specific languages.</small>
 
 
 ## Activity
