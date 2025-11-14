@@ -31,7 +31,7 @@ My primary focus lies in hardware-aware programming to accelerate machine learni
 
 I am motivated by the human experience my optimizations bring to the end-user and the real-time feedback loop of collaborating on unsolved problems, especially in real-time systems for embodied AI.
 
-Previously interned at NVIDIA and FIU ARC, building LLM serving, retrieval, and deployment infrastructure, as well as experimenting with compiler front-ends for parsing domain-specific languages.
+<small>Previously interned at NVIDIA and FIU ARC, building LLM serving, retrieval, and deployment infrastructure, as well as experimenting with compiler front-ends for parsing domain-specific languages.</small>
 
 ## Activity
 - Currently: I'm working on a project for real-time 3D reconstruction. Providing [Splat-SLAM](https://github.com/google-research/Splat-SLAM) with a production-grade, low-latency infrastructure, from camera drivers to visualization.
