@@ -29,13 +29,15 @@ permalink: /projects/vision-rt/
     max-width: 100%;
   }
   .page__content ul {
-    margin-top: 0.5rem;
-    margin-bottom: 1rem;
+    margin-top: 0.25rem;
+    margin-bottom: 0.5rem;
   }
   .page__content li {
-    margin-bottom: 0.3rem;
+    margin-bottom: 0.15rem;
   }
 </style>
+
+## Vision-RT: Real-time Image Classification
 
 When sub-millisecond latency matters, traditional CV pipelines often fall short. Vision-RT is a minimal developer toolkit that reduces significant overhead to enable simple real-time CV tasks on Linux.
 
