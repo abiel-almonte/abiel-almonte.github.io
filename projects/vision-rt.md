@@ -1,27 +1,24 @@
 ---
-layout: single
+layout: splash
 title: "Vision-RT: Real-time Image Classification"
 permalink: /projects/vision-rt/
-classes: wide
 ---
 
 <style>
-  .page {
-    max-width: 900px;
-    margin: 0 auto;
-  }
   .page__content {
-    font-size: 16px;
-    line-height: 1.6;
     max-width: 900px;
-    margin: 0 auto;
+    margin-left: auto;
+    margin-right: auto;
+    padding: 2rem;
+    font-size: 15px;
+    line-height: 1.6;
   }
   .page__content h2 {
-    font-size: 1.5rem;
+    font-size: 1.4rem;
     margin-top: 2rem;
   }
   .page__content h3 {
-    font-size: 1.2rem;
+    font-size: 1.15rem;
   }
   .page__content p {
     margin-bottom: 1.2rem;
@@ -30,6 +27,13 @@ classes: wide
     display: block;
     margin: 2rem auto;
     max-width: 100%;
+  }
+  .page__content ul {
+    margin-top: 0.5rem;
+    margin-bottom: 1rem;
+  }
+  .page__content li {
+    margin-bottom: 0.3rem;
   }
 </style>
 
