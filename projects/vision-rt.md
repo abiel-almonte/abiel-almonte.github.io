@@ -2,13 +2,35 @@
 layout: single
 title: "Vision-RT: Real-time Image Classification"
 permalink: /projects/vision-rt/
+classes: wide
 ---
+
+<style>
+  .page__content {
+    font-size: 16px;
+    line-height: 1.6;
+  }
+  .page__content h2 {
+    font-size: 1.5rem;
+    margin-top: 2rem;
+  }
+  .page__content h3 {
+    font-size: 1.2rem;
+  }
+  .page__content p {
+    margin-bottom: 1.2rem;
+  }
+</style>
 
 When sub-millisecond latency matters, traditional CV pipelines often fall short. Vision-RT is a minimal developer toolkit that reduces significant overhead to enable simple real-time CV tasks on Linux.
 
 The philosophy here is creating a system sculpted for our specific use case, rather than accepting the baggage of general-purpose frameworks.
 
-The two pain points addressed here were slow frame acquisition through OpenCV and inefficient static PyTorch inferencing, replaced with a custom V4L2 pipeline and computational graph capture respectively.
+Vision-RT addresses two pain points:
+-   Slow frame acquisition through OpenCV.
+-   Inefficient static PyTorch inferencing.
+
+We replaced these with a custom V4L2 pipeline for direct camera access and CUDA graph capture for optimized model execution.
 
 In our benchmarks, Vision-RT accelerated image classification pipeline by over 10x compared to conventional methods.
 
