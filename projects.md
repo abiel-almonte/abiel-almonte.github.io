@@ -25,11 +25,11 @@ permalink: /projects/
   }
   
   .project-image-cell {
-    width: 30%;
+    width: 40%;
   }
   
   .project-content-cell {
-    width: 70%;
+    width: 60%;
   }
   
   .project-image {
