@@ -6,20 +6,20 @@ permalink: /projects/vision-rt/
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
 
 <style>
   .page__content {
-    max-width: 900px;
+    max-width: 1000px;
     margin-left: auto;
     margin-right: auto;
     padding: 2rem;
-    font-family: 'Open Sans', Arial, Helvetica, sans-serif !important;
-    font-size: 14px;
+    font-family: 'Inter', Arial, Helvetica, sans-serif !important;
+    font-size: 16px;
     line-height: 20px;
   }
   .page__content h2 {
-    font-size: 18px;
+    font-size: 32px;
     font-weight: 700;
     margin-top: 2rem;
     display: flex;
@@ -28,7 +28,7 @@ permalink: /projects/vision-rt/
     width: 100%;
   }
   .page__content h2 small {
-    font-size: 14px;
+    font-size: 22px;
     font-weight: normal;
     margin-left: auto;
   }
@@ -47,13 +47,13 @@ permalink: /projects/vision-rt/
   }
   .figure {
     text-align: center;
-    margin: 2rem 0;
+    margin: 1rem 0;
   }
   .figure img {
     max-width: 100%;
   }
   .figure-caption {
-    font-size: 13px;
+    font-size: 14px !important;
     color: #666;
     font-style: italic;
     margin-top: 0.5rem;
@@ -77,7 +77,7 @@ In our benchmarks, Vision-RT accelerated image classification pipeline by over *
 
 <div class="figure">
   <img src="/vision-rt.png" alt="Same workload 12x faster">
-  <p class="figure-caption">Fig. 1: VisionRT fits within the 90 FPS frame budget (11 ms). The standard pipeline overruns, dropping to ~40 FPS.</p>
+  <p class="figure-caption">Fig. 1: VisionRT fits within the 90 FPS frame budget. The standard pipeline overruns, dropping to ~40 FPS.</p>
 </div>
 
 ## Finding the bottleneck
