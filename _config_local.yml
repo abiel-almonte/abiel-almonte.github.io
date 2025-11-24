@@ -1,0 +1,35 @@
+title: Abiel Almonte
+email: abielalmonte.eng@gmail.com
+description: >-
+  Abiel Almonte's personal website and projects.
+baseurl: ""
+url: "http://127.0.0.1:4000"
+twitter_username: none
+github_username: Abiel-Almonte
+
+minimal_mistakes_skin: "sunrise"
+
+author:
+  name: "Abiel Almonte"
+  bio: "My personal website and projects"
+  location:
+  email: "abielalmonte.eng@gmail.com"
+  links:
+    - label: "GitHub"
+      icon: "fab fa-fw fa-github"
+      url: "https://github.com/Abiel-Almonte"
+
+defaults:
+  - scope:
+      path: ""
+    values:
+      layout: single
+      author_profile: false
+
+markdown: kramdown
+theme: minimal-mistakes-jekyll
+include: ['_pages']
+
+plugins:
+  - jekyll-feed
+  - jekyll-include-cache
