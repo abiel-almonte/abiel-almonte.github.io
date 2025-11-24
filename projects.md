@@ -62,7 +62,7 @@ permalink: /projects/
   }
   
   .project-links a {
-    margin-right: 15px;
+    margin-right: 0px;
     font-weight: 600;
   }
   
@@ -87,7 +87,7 @@ permalink: /projects/
         <img src="/vision-rt.png" alt="Vision-RT" class="project-image">
       </td>
       <td class="project-content-cell">
-        <p class="project-title">Vision-RT</p>
+        <p class="project-title">Vision-RT – Ditching OpenCV</p>
         <div class="skills">
           <span class="skill">Computer Vision</span>
           <span class="skill">Real-time Systems</span>
@@ -96,11 +96,11 @@ permalink: /projects/
           <span class="skill">V4L2</span>
         </div>
         <p>
-          Real-time image classification with ultra-low latency by ditching OpenCV and building optimized pipeline from scratch. Cut end-to-end latency to a fraction of the original time.
+          Real-time image classification with ultra-low latency. Built from scratch to replace OpenCV's overhead with a custom V4L2 pipeline and CUDA graph optimization.
         </p>
         <div class="project-links">
-          [<a href="/projects/vision-rt">deepdive blog</a>]
-          [<a href="https://github.com/Abiel-Almonte/vision-rt">github</a>]
+          [<a href="/projects/vision-rt">blog post</a>] 
+          [<a href="https://github.com/Abiel-Almonte/vision-rt">code</a>]
         </div>
       </td>
     </tr>
