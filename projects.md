@@ -84,7 +84,7 @@ permalink: /projects/
   <tbody>
     <tr>
       <td class="project-image-cell">
-        <img src="/vision-rt.png" alt="Vision-RT" class="project-image">
+        <img src="/images/vision-rt/vision-rt.png" alt="Vision-RT" class="project-image">
       </td>
       <td class="project-content-cell">
         <p class="project-title">Vision-RT – Ditching OpenCV</p>
