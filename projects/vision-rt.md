@@ -52,6 +52,13 @@ permalink: /projects/vision-rt/
   .figure img {
     max-width: 100%;
   }
+  .figure img.large {
+    max-width: none;
+    display: block;
+    position: relative;
+    left: 50%;
+    transform: translateX(-50%);
+  }
   .figure-caption {
     font-size: 14px !important;
     color: #666;
@@ -77,7 +84,7 @@ In our benchmarks, Vision-RT accelerated image classification pipeline by over *
 
 
 <div class="figure">
-  <img src="/images/vision-rt/vision-rt.png" alt="Zero overhead">
+  <img src="/images/vision-rt/vision-rt2.png" alt="Zero overhead">
   <p class="figure-caption">Fig. 1: VisionRT fits within the 90 FPS frame budget. The standard pipeline overruns, dropping to ~40 FPS.</p>
 </div>
 
@@ -93,7 +100,7 @@ The pipeline is split into 3 stages:
 - **Preprocessing** - Creating a PyTorch-compatible tensor.
 - **Inference**-  ResNet50's forward propagation.
 
-These stages are abstracted in the following code:
+These stages are abstracted in the following profiled code:
 ```python
 @nvtx.annotate("standard", color="blue")
 def run_standard(cap, model):
@@ -107,18 +114,20 @@ def run_standard(cap, model):
     return True
 ```
 
-After profiling 100 samples post-warmup, `nsys` shows that `Capture` and `Inference` dominate the latency with an average of 11.9 ms and 9.5 ms respectivley.
+After profiling 10K samples post-warmup, `nsys` shows that `Capture` and `Inference` dominate the latency with an average of 12.2 ms and 9.4 ms respectively.
 
 <div class="figure">
-  <img src="/images/vision-rt/profile_stats1.png" alt="Infernce profile overview">
+  <img src="/images/vision-rt/profile_stats1.png" alt="Infernce profile overview" width=2068 height=195>
   <p class="figure-caption">Fig. 2: Result of profiling with nsys and nvtx </p>
 </div>
 
 In `Fig. 2` we also observe that both stages have a large standard deviation which is concerning for systems that require real-time guarantees.
 
-For `inference`, this variance can be attributed to the non-deterministic nature of GPU scheduling, where the GPU's hardware schedulers dynamically assign threads and warps to execution units based on resource availability. This dynamic behavior introduces jitter.
+For `Inference`, this variance can be attributed to the non-deterministic nature of GPU scheduling, where the GPU's hardware schedulers dynamically assign threads and warps to execution units based on resource availability. This dynamic behavior introduces jitter.
 
-Let's take a closer look into `inference` for ResNet50 ...
+Let's take a closer look into `Inference` ...
+
+## Optimizing Inference
 
 ```python
 @nvtx.annotate("inference", color="red")
@@ -130,11 +139,11 @@ def inference(tensor, model):
 Here we zoom into a single `Inference` sample on the profiler:
 
 <div class="figure">
-  <img src="/images/vision-rt/inference_profile1.png" alt="Infernce profile overview">
-  <p class="figure-caption">Fig. 3: An annotated view of ResNet50 inference on nsys's profiler</p>
+  <img src="/images/vision-rt/inference_profile1.png" alt="Inference profile overview" width=734 height=512>
+  <p class="figure-caption">Fig. 3: An annotated view of ResNet50 Inference on nsys's profiler</p>
 </div>
 
-`Fig 3` shows how the profiler looks for every GPU kernel executed. For each kernel the follow work must be done. 
+`Fig 3` is how the profiler looks for every GPU kernel executed. For each kernel the following work must be done. 
 
 1. **CPU work** – Framework overhead and CPU computation before launch.
 2. **Kernel Launch** – CPU enqueues kernel into CUDA stream.
@@ -142,12 +151,47 @@ Here we zoom into a single `Inference` sample on the profiler:
 4. **Kernel Execution** – GPU performs computation asynchronously.
 5. **Synchronization** (if needed) – Host blocks on CUDA sync or blocking API call.
 
-We can minimize the overhead and jitter surrounding kernel execution by capturing the CUDA graph and replaying it each iteration, as long as the shapes and computation remain static.
- 
-TODO: show snippet for cuda graph capture. and then hand made visual for a before and after graph capture. then introduce what torch.compile can do. show mlir before and after. then show code snippet. after results of the inference.
+We can minimize the overhead and jitter surrounding kernel execution by capturing the [CUDA graph](https://pytorch.org/blog/accelerating-pytorch-with-cuda-graphs/) and replaying it each iteration with a single kernel launch as long as the shapes and computation remain static. 
+
+Here we record the computational graph of the forward function `fn` from PyTorch's default CUDA stream.
+
+```cpp
+cudaStreamBeginCapture(stream, cudaStreamCaptureModeGlobal);
+{
+    c10::cuda::CUDAStream capture_stream = c10::cuda::getStreamFromExternal(stream, 0);
+    c10::cuda::CUDAStreamGuard guard(capture_stream);
     
+    out.copy_(fn(in).cast<torch::Tensor>());
+}
+cudaStreamEndCapture(stream, &graph);
+```
+
+ Ideally, this will eliminate the white space inbetween each `Kernel Execution` in `Fig 3`, for example we illustrate this idea below:
+
+<div class="figure">
+  <img src="/images/vision-rt/graph2.png" alt="CUDA graph drawing" class="large" width="1100">
+  <p class="figure-caption">Fig. 4: Conceptual illustration to show the benefit of CUDA graphs.</p>
+</div>
+
+`Communication` refers to the overhead/ latency of CPU-GPU coordination. `Fig. 4` demonstrates how graph capture and replay eliminates communication between each operation, significantly reducing end-to-end latency.
+
+The table below highlights the significant drop in inference times achieved with this optimization:
+
+<div class="figure">
+  <img src="/images/vision-rt/profile_stats2.png" alt="Infernce profile overview" width=2068 height=195>
+  <p class="figure-caption">Fig. 5: Result of profiling post CUDA graph optimization with nsys and nvtx</p>
+</div>
+
+With CUDA graph optimization, the average inference latency drops from 9.4 ms to just 1.35 ms. Inference times are also much more predictable, the standard deviation has decreased dramatically from 2.8 ms to only 81 microseconds!
+
+Now that inference is no longer a bottleneck lets tackle capture overhead.
+
+## Optimizing Capture Overhead
+  
+TODO
+
 ## Surprisingly Deterministic
 <div class="figure">
   <img src="/images/vision-rt/latency_kde.png" alt="Deterministic Latency">
-  <p class="figure-caption">Fig. 3: VisionRT achieves deterministic sub-12ms latency while OpenCV varies unpredictably from 20-30ms</p>
+  <p class="figure-caption">Fig. 6: VisionRT achieves deterministic sub-12ms latency while OpenCV varies unpredictably from 20-30ms</p>
 </div>
