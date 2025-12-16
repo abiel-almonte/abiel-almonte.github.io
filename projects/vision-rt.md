@@ -65,6 +65,23 @@ permalink: /projects/vision-rt/
     font-style: italic;
     margin-top: 0.5rem;
   }
+  figure-caption {
+    font-size: 14px !important;
+    color: #666;
+    font-style: italic;
+    margin-top: 0.5rem;
+    display: block;
+  }
+  .page__content table {
+    font-size: 14px !important;
+    margin: 1rem auto;
+    display: table;
+  }
+  .page__content table td,
+  .page__content table th {
+    font-size: 14px !important;
+    padding: 0.5rem;
+  }
   
 </style>
 
@@ -89,7 +106,7 @@ In our benchmarks, Vision-RT accelerated image classification pipeline by over *
 </div>
 
 
-With the initial goal of accelerating percseption for robotics, I decided to profile first to find exactly where the time sinks are.
+With the initial goal of accelerating perception for robotics, I decided to profile first to find exactly where the time sinks are.
 
 ## Finding the Bottleneck
 
@@ -114,18 +131,248 @@ def run_standard(cap, model):
     return True
 ```
 
-After profiling 10K samples post-warmup, `nsys` shows that `Capture` and `Inference` dominate the latency with an average of 12.2 ms and 9.4 ms respectively.
+Here are the summary after profiling 10K samples post-warmup:
 
 <div class="figure">
   <img src="/images/vision-rt/profile_stats1.png" alt="Infernce profile overview" width=2068 height=195>
-  <p class="figure-caption">Fig. 2: Result of profiling with nsys and nvtx </p>
+  <p class="figure-caption">Fig. 2: Result of profiling with nsys and nvtx</p>
 </div>
 
-In `Fig. 2` we also observe that both stages have a large standard deviation which is concerning for systems that require real-time guarantees.
+`Fig. 2` shows that `Capture` and `Inference` dominate the latency with an average of `12.2 ms` and `9.4 ms`, respectively. We also observe significant variance in both stages' latency, which can violate real-time system requirements.
 
-For `Inference`, this variance can be attributed to the non-deterministic nature of GPU scheduling, where the GPU's hardware schedulers dynamically assign threads and warps to execution units based on resource availability. This dynamic behavior introduces jitter.
+Assuming average latency, lets analyze the potential cascading affect.
 
-Let's take a closer look into `Inference` ...
+## Quantifying the Impact
+
+For our baseline pipeline with negligible preprocessing overhead:
+
+1. Mean capture latency: `12.2 ms`
+2. Mean inference latency: `9.4 ms`  
+3. Total pipeline latency: `21.6 ms per frame`
+
+The camera operates at `90 Hz`, establishing a frame period of `11.11 ms`. This represents our real-time budget, the maximum processing time to maintain synchronous operation.
+
+With `21.6 ms` actual processing time, we accumulate `10.49 ms` of delay per frame processed. This deficit compounds deterministically:
+
+**Analysis over 100 frames:**
+
+| Measurement | Calculation | Time |
+|-----------|---------|---------|
+| Processing time | `100 * 21.6 ms` | 2,160 ms |
+| Real time elapsed | `100 * 11.11 ms` | 1,111 ms |
+| **Accumulated deficit** | `2,160 ms - 1,111 ms` | **1,049 ms** |
+
+This `1.05 second`deficit corresponds to `94` dropped frames (`1,049 ms // 11.11 ms`).
+
+| Metric | Calculation | Result |
+|-----------|---------|---------|
+| Efficiency | `100 frames processed / 194 frames produced` | 51.4% |
+| **Effective throughput** | `51.4% * 90 FPS` | **46.3 FPS** |
+
+
+The baseline pipeline is therefore latency-bound by a factor of `~2x`, explaining the observed degradation from `90 FPS` to `~45 FPS` under sustained load. The system cannot operate at the camera's native frame rate.
+
+Now we'll determine whether to target `Capture` or `Inference` first. To maxmize potential gains, we'll calculate their lower bound to see which stage has more headroom.
+
+## Calculating the Lower Bound
+
+**Pipeline Specifications**
+
+| Component | Specification | Value |
+|-----------|--------------|-------|
+| Resolution | 320 ✕ 240 | 76,800 pixels |
+| Frame Format | YUYV (4:2:2) | 2 bytes/pixel |
+| Frame Buffer | 320 ✕ 240 ✕ 2 | 153.6 KB |
+| Refresh Rate | 90 Hz | 11.11ms period |
+| Interface | USB 2.0 | 60 MB/s bandwidth |
+| GPU PCIe | RTX 5080 | 960 GB/s bandwidth |
+| GPU FPU | RTX 5080 | 56.28 TFLOPS |
+
+# Capture Lower Bound
+To establish a theoretical minimum for capture, I'll trace the data flow from camera to GPU-ready tensor.
+
+**Frame Acquisition Time**
+
+| Operation | Calculation | Time |
+|-----------|------------|------|
+| Camera frame period | `1 / 90 Hz` | 11.11ms |
+| USB 2.0 transfer | `153.6 KB / 60 MB/s` | 2.02ms |
+| **Frame acquisition** | `max(11.11ms, 2.02ms)` | **11.11ms** |
+
+**YUYV-2-RGB-Normalization Kernel**
+
+| Operation | Calculation | Result |
+|-----------|---------|---------|
+| Threads | `153.6 KB / 4B` | 38.4K threads |
+| Integer unpacking | `56 ops ✕ 38.4K threads` | *Not limiting* |
+| Compute | `(12 ops ✕ 38.4K threads) / 56.28 TFLOPS` | 8.2ns |
+| Memory | `(28 bytes ✕ 38.4K threads) / 960 GB/s` | 1.12µs |
+| **Kernel time** | `max(compute, memory)` | **1.12μs** |
+
+---
+
+**Capture Theoretical Minimum**
+
+| Stage | Time |
+|-------|------|
+| Frame acquisition | 11.11 ms |
+| Host-to-Device copy | 0.16μs |
+| Kernel time | 1.12μs |
+| **Capture Lower Bound** | **~11.11ms** |
+
+# Inference Lower Bound
+
+To establish a theoretical minimum for inference, I'll analyze the computational requirements of ResNet50 by examining a single convolution operation and scaling to the full network.
+
+**Analyzing Conv2d Operations**
+
+I wrote a naive 2D convolution kernel to understand the exact operations required:
+
+```cpp
+    // block parallelize over the first three for-loops.
+    const int batch = blockIdx.x * blockDim.x + threadIdx.x;
+    const int out_channel = blockIdx.y * blockDim.y + threadIdx.y;
+    const int out_row = blockIdx.z * blockDim.z + threadIdx.z;
+    
+    if (batch >= bs || out_channel >= out_ch || out_row >= out_h) {
+        return;
+    }
+    
+    // thread parallelize over the the 4th for-loop.
+    for (int out_col = threadIdx.x; out_col < out_w; out_col += blockDim.x) {
+        
+      auto dot_product = (T) 0;
+      
+      for (int in_channel = 0; in_channel < in_ch; in_channel += 1){
+            for (int filter_row = 0; filter_row < f_h; filter_row += 1){
+                for (int filter_col = 0; filter_col < f_w; filter_col += 1){
+                    
+                    const T filter_element = filter[out_channel][in_channel][filter_row][filter_col];
+                    
+                    const int image_row = filter_row + out_row * stride;
+                    const int image_col = filter_col + out_col * stride;
+                    const T image_element = image[batch][in_channel][image_row][image_col];
+                    
+                    dot_product += filter_element * image_element;
+                }
+            }
+        }
+        
+        out[batch][out_channel][out_row][out_col] = dot_product;
+    }
+```
+
+**Per-thread analysis:**  
+Each output element requires approximately:
+
+| Metric             | Formula                                                   |
+|--------------------|:----------------------------------------------------------|
+| Compute   | `ceil(out_w / blockdim.x) ✕ (in_ch ✕ f_h ✕ f_w) MACs`          |
+| Memory | `4 ✕ ceil(out_w / blockdim.x) ✕ [2 ✕ (in_ch ✕ f_h ✕ f_w) + 1] Bytes`|
+
+<small> *Note:* `out_w = 1 + (in_h - f_h) // stride`</small>  
+
+The formula for the kernel's total FLOPs and MBs, assuming  all threads launched do work, become the following:
+
+| Metric           | Formula                                                                                                                        |
+|:-----------------|:-------------------------------------------------------------------------------------------------------------------------------|
+| FLOPs per Thread | `2 ✕ ceil(out_w / blockdim.x) ✕ in_ch ✕ f_h ✕ f_w`                                                                             |
+| MBs per Thread | `4 ✕ ceil(out_w / blockdim.x) ✕ [2 ✕ (in_ch ✕ f_h ✕ f_w) + 1] ✕ 1e-6`                                                          |
+| Threads per Block| `blockdim.x ✕ blockdim.y ✕ blockdim.z`                                                                                         |
+| Number of Blocks | `ceil(bs / blockdim.x) ✕ ceil(out_ch / blockdim.y) ✕ ceil(out_h / blockdim.z)`                                                 |
+| **Total est. FLOPs** | `FLOPs per Thread ✕ Threads per Block ✕ Number of Blocks`                                                             |
+| **Total est. MBs** | `MBs per Thread ✕ Threads per Block ✕ Number of Blocks`                                                             |
+
+<small> *Note: Each multiply-accumulate (MAC) counts as 2 FLOPs*</small>  
+
+Despite the verbosity, the total FLOPs can be nicely simplifed into the following well-known formula when the tensor shapes are "nice".
+
+```
+Total FLOPs = 2 ✕ bs ✕ (f_h ✕ f_w ✕ in_ch) ✕ (out_h ✕ out_w ✕ out_ch)
+```
+
+<small> *Note: `Total FLOPs <= Total est. FLOPs`*</small>
+
+We'll use a simple example to determine whether this kernel is compute or memory bound, assuming the following launch config:
+
+```cpp
+dim3 threadGrid(8, 8, 4); // 256 threads per block
+dim3 blockGrid(
+    (bs + 7) / 8, // batch dimension
+    (out_ch + 7) / 8, // out channel dimension
+    (out_h + 3) / 4 // out height dimension
+);
+```
+Given a `226×226` RGB image, `3×3` filter, and parameters `[stride=1, out_ch=64]`:
+
+
+| Per-Thread          | Calculation                                 | Result  |
+|--------------------|---------------------------------------------|---------|
+| out_w iters        | `ceil(224 / 8)`                            | 28 iterations |
+| MACs               | `28 × (3 × 3 × 3)`                         | 756 MACs |
+| reads       | `756 × 2 elements × 4B`                    | 6,048 bytes |
+| writes      | `28 elements × 4B`                         | 112 bytes |
+| **FLOPs**              | `756 × 2`                                   | **1,512 FLOPs** |
+| **Total memory**       | `6,048 + 112`                              | **6,160 bytes** |
+
+| Device-Wide        | Calculation                                                      | Result  |
+|--------------------|------------------------------------------------------------------|---------|
+| Total Threads      | `1 batch × 8 out_ch_blocks × 56 out_h_blocks × 256 threads/block` | 114,688 threads |
+| Compute            | `(1,512 ops × 114,688 threads) / 56.28 TFLOPS`                  | 3.08 µs |
+| Memory             | `(6,160 bytes × 114,688 threads) / 960 GB/s`                    | 0.736 ms |
+| **naive Kernel time**    | `max(compute, memory)`                                          | **0.736 ms** |
+
+The kernel is clearly memory-bound.
+
+However when profiling convolution directly on pytorch 
+```python
+@nvtx.annotate("conv_pytorch", color="black")
+def conv(x, w):
+    return F.conv2d(x, w, stride=[1,1])
+```
+ the results were shocking:
+
+<div class="figure">
+  <img src="/images/vision-rt/conv_cudnn_profile.png" alt="" width=2068 height=195>
+  <p class="figure-caption">Fig. 3: Result of profiling cudnn convlution</p>
+</div>
+
+The convlution kernel averaged just `15 µs` and a minimum of `14.8µ`! Suprisingly this actually aligns with the following formula for the *optimal* kernel, where data is moved only once for input, weight, and output.
+
+|         | Calculation                                                      | Result  |
+|--------------------|------------------------------------------------------------------|---------|
+| Input      | `4 ✕ bs ✕ in_ch ✕ in_h ✕ in_w` | 612912 bytes |
+| Weight        | `4 ✕ f_h ✕ f_w ✕ in_ch ✕ out_ch`                  | 6912 bytes |
+| Output         | `4 ✕ bs ✕ out_ch ✕ out_h ✕ out_w`                    | 12845056 bytes |
+| **cudnn Kernel time**    | `(Input + Weight + Output) / 960 GB/s`                               | **0.14 µs** |
+
+Knowing this we can extrapolate the same formula to the entire model to find the lower bound, with the assumption that memory bandwidth is the limiting factor.
+
+Below is the ResNet-50 architecture:
+
+<div class="figure">
+  <img src="/images/vision-rt/resnet50_flops.png" alt="ResNet Layers" >
+  <p class="figure-caption">Fig. 3: ResNet model architecture, taken from "Deep Residual Learning for Image Recognition" by Kaiming He et al. (2015).</p>
+</div>
+
+| Stage  | Calculation  | Latency |
+|--------------------|----|
+| conv1| `7.67 MB / 960 GB/s`| 0.01 ms|
+| conv2| `31.36 MB / 960 GB/s`| 0.03 ms |
+| conv3| `30.54 MB / 960 GB/s`| 0.03 ms |
+| conv4| `45.97 MB / 960 GB/s`| 0.05 ms |
+| conv5| `64.99 MB / 960 GB/s`| 0.07 ms |
+| fc | `8.2 MB / 960 GB/s` | 0.01 ms|
+| **Inference lower bound**| `conv1 + … + conv5 + fc`| **0.2 ms**                             
+
+---
+
+|Stage | Lower Bound | Headroom | Possible Reduction in Latency (%)|
+|-|
+| Capture | 11.11ms | 1.126ms | 9%|
+| **Inference** | 0.2ms | 9.167ms | **98%**|
+
+So knowing that `Inference` has a significantly more headroom than `Capture`. Let's take a closer look into `Inference` …
 
 ## Optimizing Inference
 
@@ -140,10 +387,10 @@ Here we zoom into a single `Inference` sample on the profiler:
 
 <div class="figure">
   <img src="/images/vision-rt/inference_profile1.png" alt="Inference profile overview" width=734 height=512>
-  <p class="figure-caption">Fig. 3: An annotated view of ResNet50 Inference on nsys's profiler</p>
+  <p class="figure-caption">Fig. 4: An annotated view of ResNet50 Inference on nsys's profiler</p>
 </div>
 
-`Fig 3` is how the profiler looks for every GPU kernel executed. For each kernel the following work must be done. 
+`Fig 4` is how the profiler looks for every GPU kernel executed. For each kernel the following work must be done. 
 
 1. **CPU work** – Framework overhead and CPU computation before launch.
 2. **Kernel Launch** – CPU enqueues kernel into CUDA stream.
@@ -166,32 +413,41 @@ cudaStreamBeginCapture(stream, cudaStreamCaptureModeGlobal);
 cudaStreamEndCapture(stream, &graph);
 ```
 
- Ideally, this will eliminate the white space inbetween each `Kernel Execution` in `Fig 3`, for example we illustrate this idea below:
+ Ideally, this will eliminate the white space inbetween each `Kernel Execution` in `Fig 4`, for example we illustrate this idea below:
 
 <div class="figure">
   <img src="/images/vision-rt/graph2.png" alt="CUDA graph drawing" class="large" width="1100">
-  <p class="figure-caption">Fig. 4: Conceptual illustration to show the benefit of CUDA graphs.</p>
+  <p class="figure-caption">Fig. 5: Conceptual illustration to show the benefit of CUDA graphs.</p>
 </div>
 
-`Communication` refers to the overhead/ latency of CPU-GPU coordination. `Fig. 4` demonstrates how graph capture and replay eliminates communication between each operation, significantly reducing end-to-end latency.
+`Communication` refers to the overhead/ latency of CPU-GPU coordination. `Fig. 5` demonstrates how graph capture and replay eliminates communication between each operation, significantly reducing end-to-end latency.
 
 The table below highlights the significant drop in inference times achieved with this optimization:
 
 <div class="figure">
   <img src="/images/vision-rt/profile_stats2.png" alt="Infernce profile overview" width=2068 height=195>
-  <p class="figure-caption">Fig. 5: Result of profiling post CUDA graph optimization with nsys and nvtx</p>
+  <p class="figure-caption">Fig. 6: Result of profiling post CUDA graph optimization with nsys and nvtx</p>
 </div>
 
-With CUDA graph optimization, the average inference latency drops from 9.4 ms to just 1.35 ms. Inference times are also much more predictable, the standard deviation has decreased dramatically from 2.8 ms to only 81 microseconds!
+With CUDA graphs, the average inference latency drops from `9.4ms` to just `1.35ms`. Inference times are also much more predictable, the standard deviation has decreased dramatically from `2.8ms` to just `81µs`!
 
 Now that inference is no longer a bottleneck lets tackle capture overhead.
 
 ## Optimizing Capture Overhead
   
+Let's revisit the profile summary used to determine the bottlenecks shown in `Fig. 2`.
+
+<div class="figure">
+  <img src="/images/vision-rt/profile_stats3.png" alt="Infernce profile overview" width=2068 height=195>
+  <p class="figure-caption">Fig. 7: Result of profiling the baseline with nsys and nvtx</p>
+</div>
+
 TODO
 
 ## Surprisingly Deterministic
 <div class="figure">
   <img src="/images/vision-rt/latency_kde.png" alt="Deterministic Latency">
-  <p class="figure-caption">Fig. 6: VisionRT achieves deterministic sub-12ms latency while OpenCV varies unpredictably from 20-30ms</p>
+  <p class="figure-caption">Fig. last: VisionRT achieves deterministic sub-12ms latency while OpenCV varies unpredictably from 20-30ms</p>
 </div>
+
+TODO
