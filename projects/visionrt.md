@@ -1,7 +1,7 @@
 ---
 layout: splash
-title: "Vision-RT"
-permalink: /projects/vision-rt/
+title: "visionrt"
+permalink: /projects/visionrt/
 ---
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -85,24 +85,24 @@ permalink: /projects/vision-rt/
   
 </style>
 
-## Vision-RT -- Ditching OpenCV <small>[View on GitHub](https://github.com/Abiel-Almonte/vision-rt)</small>
+## VisionRT -- Ditching OpenCV <small>[View on GitHub](https://github.com/Abiel-Almonte/visionrt)</small>
 
-When sub-millisecond latency matters, traditional CV pipelines often fall short. Vision-RT is a minimal developer toolkit that reduces significant overhead to enable simple real-time CV tasks on Linux.
+When sub-millisecond latency matters, traditional computer vision pipelines often fall short. VisionRT is a minimal developer toolkit that reduces significant overhead to enable simple real-time computer vision tasks on Linux.
 
 The philosophy here is creating a system sculpted for our specific use case, rather than accepting the baggage of general-purpose frameworks.
 
-Vision-RT addresses two bottlenecks:
+VisionRT addresses two bottlenecks:
 - Slow frame acquisition through OpenCV
 - Inefficient static PyTorch inferencing
 
 We replaced these with a custom V4L2 pipeline for direct camera access and CUDA graph capture for optimized model execution.
 
-In our benchmarks, Vision-RT accelerated image classification pipeline by over **2x** compared to conventional methods.
+In our benchmarks, VisionRT accelerated image classification pipeline by over **2x** compared to conventional methods.
 
 
 <div class="figure">
-  <img src="/images/vision-rt/vision-rt2.png" alt="Zero overhead">
-  <p class="figure-caption">Fig. 1: VisionRT fits within the 90 FPS frame budget. The standard pipeline overruns, dropping to ~40 FPS.</p>
+  <img src="/images/visionrt/visionrt2.png" alt="Zero overhead">
+  <p class="figure-caption">Fig. 1: visionrt fits within the 90 FPS frame budget. The standard pipeline overruns, dropping to ~40 FPS.</p>
 </div>
 
 
@@ -134,13 +134,13 @@ def run_standard(cap, model):
 Here are the summary after profiling 10K samples post-warmup:
 
 <div class="figure">
-  <img src="/images/vision-rt/profile_stats1.png" alt="Infernce profile overview" width=2068 height=195>
+  <img src="/images/visionrt/profile_stats1.png" alt="Infernce profile overview" width=2068 height=195>
   <p class="figure-caption">Fig. 2: Result of profiling with nsys and nvtx</p>
 </div>
 
 `Fig. 2` shows that `Capture` and `Inference` dominate the latency with an average of `12.2 ms` and `9.4 ms`, respectively. We also observe significant variance in both stages' latency, which can violate real-time system requirements.
 
-Assuming average latency, lets analyze the potential cascading affect.
+Assuming average latency, let's analyze the potential cascading effect.
 
 ## Quantifying the Impact
 
@@ -162,7 +162,7 @@ With `21.6 ms` actual processing time, we accumulate `10.49 ms` of delay per fra
 | Real time elapsed | `100 * 11.11 ms` | 1,111 ms |
 | **Accumulated deficit** | `2,160 ms - 1,111 ms` | **1,049 ms** |
 
-This `1.05 second`deficit corresponds to `94` dropped frames (`1,049 ms // 11.11 ms`).
+This `1.05 second` deficit corresponds to `94` dropped frames (`1,049 ms // 11.11 ms`).
 
 | Metric | Calculation | Result |
 |-----------|---------|---------|
@@ -172,7 +172,7 @@ This `1.05 second`deficit corresponds to `94` dropped frames (`1,049 ms // 11.11
 
 The baseline pipeline is therefore latency-bound by a factor of `~2x`, explaining the observed degradation from `90 FPS` to `~45 FPS` under sustained load. The system cannot operate at the camera's native frame rate.
 
-Now we'll determine whether to target `Capture` or `Inference` first. To maxmize potential gains, we'll calculate their lower bound to see which stage has more headroom.
+Now we'll determine whether to target `Capture` or `Inference` first. To maximize potential gains, we'll calculate their lower bound to see which stage has more headroom.
 
 ## Calculating the Lower Bound
 
@@ -270,7 +270,7 @@ Each output element requires approximately:
 | Compute   | `ceil(out_w / blockdim.x) ✕ (in_ch ✕ f_h ✕ f_w) MACs`          |
 | Memory | `4 ✕ ceil(out_w / blockdim.x) ✕ [2 ✕ (in_ch ✕ f_h ✕ f_w) + 1] Bytes`|
 
-<small> *Note:* `out_w = 1 + (in_h - f_h) // stride`</small>  
+<small>*Note:* `out_w = 1 + (in_h - f_h) // stride`</small>  
 
 The formula for the kernel's total FLOPs and MBs, assuming  all threads launched do work, become the following:
 
@@ -283,7 +283,7 @@ The formula for the kernel's total FLOPs and MBs, assuming  all threads launched
 | **Total est. FLOPs** | `FLOPs per Thread ✕ Threads per Block ✕ Number of Blocks`                                                             |
 | **Total est. MBs** | `MBs per Thread ✕ Threads per Block ✕ Number of Blocks`                                                             |
 
-<small> *Note: Each multiply-accumulate (MAC) counts as 2 FLOPs*</small>  
+<small>*Note:* Each multiply-accumulate (MAC) counts as 2 FLOPs</small>  
 
 Despite the verbosity, the total FLOPs can be nicely simplifed into the following well-known formula when the tensor shapes are "nice".
 
@@ -291,7 +291,8 @@ Despite the verbosity, the total FLOPs can be nicely simplifed into the followin
 Total FLOPs = 2 ✕ bs ✕ (f_h ✕ f_w ✕ in_ch) ✕ (out_h ✕ out_w ✕ out_ch)
 ```
 
-<small> *Note: `Total FLOPs <= Total est. FLOPs`*</small>
+<small>*Note:* `Total FLOPs <= Total est. FLOPs`</small>  
+<small>*Note:* The simplification can be found in Appendix I.</small>
 
 We'll use a simple example to determine whether this kernel is compute or memory bound, assuming the following launch config:
 
@@ -322,37 +323,37 @@ Given a `226×226` RGB image, `3×3` filter, and parameters `[stride=1, out_ch=6
 | Memory             | `(6,160 bytes × 114,688 threads) / 960 GB/s`                    | 0.736 ms |
 | **naive Kernel time**    | `max(compute, memory)`                                          | **0.736 ms** |
 
-The kernel is clearly memory-bound.
+The kernel is clearly memory-bound. Based on this analysis, we'd expect convolution to take around `0.7 ms`.
 
-However when profiling convolution directly on pytorch 
+However, when profiling convolution directly on PyTorch 
 ```python
 @nvtx.annotate("conv_pytorch", color="black")
 def conv(x, w):
     return F.conv2d(x, w, stride=[1,1])
 ```
- the results were shocking:
+the results were shocking:
 
 <div class="figure">
-  <img src="/images/vision-rt/conv_cudnn_profile.png" alt="" width=2068 height=195>
-  <p class="figure-caption">Fig. 3: Result of profiling cudnn convlution</p>
+  <img src="/images/visionrt/conv_cudnn_profile.png" alt="" width=2068 height=195>
+  <p class="figure-caption">Fig. 3: Result of profiling cuDNN convolution</p>
 </div>
 
-The convlution kernel averaged just `15 µs` and a minimum of `14.8µ`! Suprisingly this actually aligns with the following formula for the *optimal* kernel, where data is moved only once for input, weight, and output.
+The convolution kernel averaged just `15 µs` and a minimum of `14.8 µs`! Surprisingly, this actually aligns with the following formula for the *optimal* kernel, where data is moved only once for input, weight, and output.
 
 |         | Calculation                                                      | Result  |
 |--------------------|------------------------------------------------------------------|---------|
 | Input      | `4 ✕ bs ✕ in_ch ✕ in_h ✕ in_w` | 612912 bytes |
 | Weight        | `4 ✕ f_h ✕ f_w ✕ in_ch ✕ out_ch`                  | 6912 bytes |
 | Output         | `4 ✕ bs ✕ out_ch ✕ out_h ✕ out_w`                    | 12845056 bytes |
-| **cudnn Kernel time**    | `(Input + Weight + Output) / 960 GB/s`                               | **0.14 µs** |
+| **cuDNN Kernel time**    | `(Input + Weight + Output) / 960 GB/s`                               | **0.14 µs** |
 
 Knowing this we can extrapolate the same formula to the entire model to find the lower bound, with the assumption that memory bandwidth is the limiting factor.
 
-Below is the ResNet-50 architecture:
+Below is the ResNet50 architecture:
 
 <div class="figure">
-  <img src="/images/vision-rt/resnet50_flops.png" alt="ResNet Layers" >
-  <p class="figure-caption">Fig. 3: ResNet model architecture, taken from "Deep Residual Learning for Image Recognition" by Kaiming He et al. (2015).</p>
+  <img src="/images/visionrt/resnet50_flops.png" alt="ResNet Layers" >
+  <p class="figure-caption">Fig. 4: ResNet model architecture, taken from "Deep Residual Learning for Image Recognition" by Kaiming He et al. (2015).</p>
 </div>
 
 | Stage  | Calculation  | Latency |
@@ -372,7 +373,7 @@ Below is the ResNet-50 architecture:
 | Capture | 11.11ms | 1.126ms | 9%|
 | **Inference** | 0.2ms | 9.167ms | **98%**|
 
-So knowing that `Inference` has a significantly more headroom than `Capture`. Let's take a closer look into `Inference` …
+So knowing that `Inference` has significantly more headroom than `Capture`, let's take a closer look into `Inference`…
 
 ## Optimizing Inference
 
@@ -386,11 +387,13 @@ def inference(tensor, model):
 Here we zoom into a single `Inference` sample on the profiler:
 
 <div class="figure">
-  <img src="/images/vision-rt/inference_profile1.png" alt="Inference profile overview" width=734 height=512>
-  <p class="figure-caption">Fig. 4: An annotated view of ResNet50 Inference on nsys's profiler</p>
+  <img src="/images/visionrt/inference_profile1.png" alt="Inference profile overview" width=734 height=512>
+  <p class="figure-caption">Fig. 5: An annotated view of ResNet50 inference on nsys's profiler</p>
 </div>
 
-`Fig 4` is how the profiler looks for every GPU kernel executed. For each kernel the following work must be done. 
+# Eliminating Overhead
+
+`Fig. 5` is how the profiler looks for every GPU kernel executed. For each kernel the following work must be done. 
 
 1. **CPU work** – Framework overhead and CPU computation before launch.
 2. **Kernel Launch** – CPU enqueues kernel into CUDA stream.
@@ -405,49 +408,173 @@ Here we record the computational graph of the forward function `fn` from PyTorch
 ```cpp
 cudaStreamBeginCapture(stream, cudaStreamCaptureModeGlobal);
 {
-    c10::cuda::CUDAStream capture_stream = c10::cuda::getStreamFromExternal(stream, 0);
+    c10::cuda::CUDAStream capture_stream = c10::cuda::getStreamFromExternal(stream, 0);s
     c10::cuda::CUDAStreamGuard guard(capture_stream);
-    
+
     out.copy_(fn(in).cast<torch::Tensor>());
 }
 cudaStreamEndCapture(stream, &graph);
 ```
 
- Ideally, this will eliminate the white space inbetween each `Kernel Execution` in `Fig 4`, for example we illustrate this idea below:
+ Ideally, this will eliminate the white space between each `Kernel Execution` in `Fig. 5`. The diagram below illustrates this conceptually, notice how the idle periods and delays (crossed out in pink) are removed when using CUDA graphs:
 
 <div class="figure">
-  <img src="/images/vision-rt/graph2.png" alt="CUDA graph drawing" class="large" width="1100">
-  <p class="figure-caption">Fig. 5: Conceptual illustration to show the benefit of CUDA graphs.</p>
+  <img src="/images/visionrt/graph3.png" alt="CUDA graph drawing">
+  <p class="figure-caption">Fig. 6: Conceptual illustration to show the benefit of CUDA graphs.</p>
 </div>
 
-`Communication` refers to the overhead/ latency of CPU-GPU coordination. `Fig. 5` demonstrates how graph capture and replay eliminates communication between each operation, significantly reducing end-to-end latency.
+The black arrows represent the overhead/ latency of CPU(H)-GPU(D) coordination.
 
-The table below highlights the significant drop in inference times achieved with this optimization:
+To see this overhead in the profiler, we can zoom into the CUDA API calls before and after each convolution kernel:
 
 <div class="figure">
-  <img src="/images/vision-rt/profile_stats2.png" alt="Infernce profile overview" width=2068 height=195>
-  <p class="figure-caption">Fig. 6: Result of profiling post CUDA graph optimization with nsys and nvtx</p>
+  <img src="/images/visionrt/no_graph_overhead.png" alt="Convolution kernel overhead without CUDA graphs.">
+  <p class="figure-caption">Fig. 7: nsys view focused on CUDA API calls around kernel execution.</p>
+</div>
+<small>*Note:* Profiled with `--cuda-trace-all-apis=true`</small>
+
+Nearly **28 microseconds** of CUDA API calls occur before and after the kernel executes! 
+
+Overall, `Fig. 6` demonstrates how graph capture and replay eliminates communication between each operation, significantly reducing end-to-end latency. For workloads with many small kernels, this overhead can dominate execution time.
+
+# Folding and Fusing
+
+While CUDA graphs eliminates overhead, we can focus on reducing the time on device by optimizing what happens within the graph.
+
+
+PyTorch's `torch.compile` is a simple to use tool that generates highly efficient Triton kernels.
+Underneath this tool exists a sophisticated native JIT compiler infrastructure:
+
+1. **TorchDynamo** - Captures Python code into a computational graph.
+2. **Torch.fx** - Intermediate representation that makes graph transformation easy.
+3. **TorchInductor** Generates optimized Triton kernels from the graph. 
+
+Let's see what `inductor` generates by default.
+
+```python
+compiled_model = torch.compile(model, backend="inductor", dynamic=False)
+```
+
+Inspecting the generated code reveals the following kernels:
+
+|Kernel Name|
+|:-|
+|triton_poi_fused__native_batch_norm_legit_no_training_relu|
+|triton_poi_fused__native_batch_norm_legit_no_training_add_relu|
+|extern_kernels.convolution|
+
+`inductor` already fused the batch norm with ReLU, and occasionally the residual add, but left convolution to an external kernel, typically implementations in cuDNN or CUTLASS, which are hard to beat.
+
+This is great. However, we don't actually need to compute batch normalization at inference time at all.
+In fact, constant folding the normalization into the convolution parameters is a common optimization pattern, eliminating an entire kernel and memory round-trip.  
+
+Let's create the FX graph transformation:
+
+```python
+if node.op == "call_function" and node.target == F.batch_norm:
+	if parent.op == "call_function" and parent.target == F.conv2d:
+		...
+        	inv_sqrt_var_eps = (var.value + eps) ** -0.5
+        	convW_new = convW.value * (bnW.value * inv_sqrt_var_eps).view(-1, 1, 1, 1)
+        	
+        	if not convBias: create_bias(parent)
+        	convBias_new = (convBias - mean.value) * bnW.value * inv_sqrt_var_eps + bnBias.value
+```
+<small>*Note:* The derivation for the folded parameters is found in Appendix II.</small>
+
+And now the custom backend:
+
+```python
+@register_backend
+def visionrt(gm: fx.GraphModule, ins):
+    if config.custom_optims:
+    	...
+        gm, ins = optimize_fx(
+            gm=gm, 
+            placeholders=placeholders, 
+            transformations=[xform for _, xform in enabled_xforms]
+        )
+    return compile_fx(gm, ins) # pass to inductor
+```
+
+We now observe that `inductor` generates a few different kernels:
+
+|Kernel Name|
+|:--|
+|triton_poi_fused_convolution_relu|
+|triton_poi_fused_add_convolution_relu|
+|extern_kernels.convolution|
+
+
+Matching a similar pattern as before, `inductor` is fusing convolution with ReLU, and the residual add if present. The following is a visual on how the computation graph was optimized:
+
+<div class="figure">
+  <img src="/images/visionrt/graph_optims.png" alt="Computation Graph Optimizations">
+  <p class="figure-caption">Fig. 8: Before and after graph transformations</p>
 </div>
 
-With CUDA graphs, the average inference latency drops from `9.4ms` to just `1.35ms`. Inference times are also much more predictable, the standard deviation has decreased dramatically from `2.8ms` to just `81µs`!
+We can see how conv-bn folding created opportunities for `inductor` to fuse other operations with convolution by eliminating the batch norm barrier.
 
-Now that inference is no longer a bottleneck lets tackle capture overhead.
+While I was inspecting the generated Triton code for the `conv_relu` and `add_conv_relu` kernels:
+```python
+x2 = xindex
+x0 = (xindex % 256) # folded bias index
+tmp0 = tl.load(in_out_ptr0 + (x2), xmask) 
+tmp1 = tl.load(in_ptr0 + (x0), xmask, eviction_policy='evict_last')
+tmp2 = tmp0 + tmp1 # bias add
+tmp3 = tl.full([1], 0, tl.int32)
+tmp4 = triton_helpers.maximum(tmp3, tmp2)
+tl.store(in_out_ptr0 + (x2), tmp4, xmask)
+```
+
+I noticed that the new bias appeared, confirming that our transformation worked!
+
+I also implemented manual fusing transformations such as `conv_relu`, `add_relu`, and `add_conv_relu` using CUDA, Triton, and cuDNN.
+However, they all resulted in regressions or negligible improvements that ruined the model's flexibility. 
+
+Working *with* `inductor` was clearly the better approach. 
+
+---
+
+The figure below highlights the significant drop in inference times achieved with these optimizations:
+
+<div class="figure">
+  <img src="/images/visionrt/Inference_profile2.png" alt="Inference profile overview" width=2068 height=195>
+  <p class="figure-caption">Fig. 9: Result of profiling post inference optimizations with nsys and nvtx</p>
+</div>
+
+These results are broken down to reveal the incremental improvements in both latency and predictability from each optimization:
+
+| Version | Avg Latency | Latency Reduction | StdDev | Variance Reduction |
+|-------------------|-------------|-------------------|---------|-------------------|
+| Baseline | 9.306 ms | — | 2.939 ms | — |
+| Inductor | 7.949 ms | **14.6%** | 2.360 ms | **19.7%** |
+| Folding + Inductor (Fusing) | 6.989 ms | **24.9%** | 2.045 ms | **30.4%** |
+| **Folding + Inductor (Fusing) + CUDA Graph** | **1.228 ms** | **86.8%** | **37.357 µs** | **98.7%** |
+
+<small>*Note:* Profiling script found [here](https://github.com/Abiel-Almonte/visionrt/blob/master/examples/profile_inference.py)</small>
+
+The average inference latency drops from `9.3ms` to just `1.2ms`, and the standard deviation has decreased dramatically from `2.9ms` to just `37µs`!  
+
+Inference times are so predictable, it's practically deterministic. Notice how the median equals the average, implying a nearly perfect normal distribution.
+
+Now that `Inference` is no longer a bottleneck, let's tackle `Capture` overhead.
 
 ## Optimizing Capture Overhead
   
 Let's revisit the profile summary used to determine the bottlenecks shown in `Fig. 2`.
 
 <div class="figure">
-  <img src="/images/vision-rt/profile_stats3.png" alt="Infernce profile overview" width=2068 height=195>
-  <p class="figure-caption">Fig. 7: Result of profiling the baseline with nsys and nvtx</p>
+  <img src="/images/visionrt/profile_stats3.png" alt="Inference profile overview" width=2068 height=195>
+  <p class="figure-caption">Fig. 10: Result of profiling the baseline with nsys and nvtx</p>
 </div>
 
 TODO
 
 ## Surprisingly Deterministic
 <div class="figure">
-  <img src="/images/vision-rt/latency_kde.png" alt="Deterministic Latency">
-  <p class="figure-caption">Fig. last: VisionRT achieves deterministic sub-12ms latency while OpenCV varies unpredictably from 20-30ms</p>
+  <img src="/images/visionrt/latency_kde.png" alt="Deterministic Latency">
+  <p class="figure-caption">Fig. 11: visionrt achieves deterministic sub-12ms latency while OpenCV varies unpredictably from 20-30ms</p>
 </div>
 
 TODO

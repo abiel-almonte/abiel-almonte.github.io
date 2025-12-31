@@ -84,10 +84,10 @@ permalink: /projects/
   <tbody>
     <tr>
       <td class="project-image-cell">
-        <img src="/images/vision-rt/vision-rt.png" alt="Vision-RT" class="project-image">
+        <img src="/images/visionrt/visionrt.png" alt="visionrt" class="project-image">
       </td>
       <td class="project-content-cell">
-        <p class="project-title">Vision-RT – Ditching OpenCV</p>
+        <p class="project-title">VisionRT – Ditching OpenCV</p>
         <div class="skills">
           <span class="skill">Computer Vision</span>
           <span class="skill">Real-time Systems</span>
@@ -99,8 +99,8 @@ permalink: /projects/
           Real-time image classification with ultra-low latency. Built from scratch to replace OpenCV's overhead with a custom V4L2 pipeline and CUDA graph optimization.
         </p>
         <div class="project-links">
-          [<a href="/projects/vision-rt">blog post</a>] 
-          [<a href="https://github.com/Abiel-Almonte/vision-rt">code</a>]
+          [<a href="/projects/visionrt">blog post</a>] 
+          [<a href="https://github.com/Abiel-Almonte/visionrt">code</a>]
         </div>
       </td>
     </tr>
