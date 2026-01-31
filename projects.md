@@ -87,7 +87,7 @@ permalink: /projects/
         <img src="/images/visionrt/visionrt.png" alt="visionrt" class="project-image">
       </td>
       <td class="project-content-cell">
-        <p class="project-title">VisionRT – Ditching OpenCV</p>
+        <p class="project-title">VisionRT – Deterministic Inference via Vertical Optimization</p>
         <div class="skills">
           <span class="skill">Computer Vision</span>
           <span class="skill">Real-time Systems</span>

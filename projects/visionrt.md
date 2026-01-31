@@ -85,17 +85,20 @@ permalink: /projects/visionrt/
   
 </style>
 
-## VisionRT -- Ditching OpenCV <small>[View on GitHub](https://github.com/Abiel-Almonte/visionrt)</small>
+## VisionRT - Deterministic Inference via Vertical Optimization 
+[View on GitHub](https://github.com/Abiel-Almonte/visionrt)
 
-When sub-millisecond latency matters, traditional computer vision pipelines often fall short. VisionRT is a minimal developer toolkit that reduces significant overhead to enable simple real-time computer vision tasks on Linux.
+When milliseconds matters, traditional computer vision pipelines often fall short. VisionRT is a minimal developer toolkit that reduces significant overhead to enable simple real-time computer vision tasks on Linux.
 
-The philosophy here is creating a system sculpted for our specific use case, rather than accepting the baggage of general-purpose frameworks.
+Real-time systems don't just need fast inference, they need *predictable* inference. A pipeline that averages 10ms but occasionally spikes to 30ms will miss deadlines and drop frames.
+
+The philosophy here is creating a system sculpted for our specific use case by owning every layer from frame capture to model execution. Rather than accepting the baggage of general-purpose frameworks.
 
 VisionRT addresses two bottlenecks:
 - Slow frame acquisition through OpenCV
 - Inefficient static PyTorch inferencing
 
-We replaced these with a custom V4L2 pipeline for direct camera access and CUDA graph capture for optimized model execution.
+We replaced these with a custom V4L2 pipeline for direct camera access and CUDA graph capture with compiler optimized kernels for model execution.
 
 In our benchmarks, VisionRT accelerated image classification pipeline by over **2x** compared to conventional methods.
 
@@ -419,7 +422,7 @@ cudaStreamEndCapture(stream, &graph);
  Ideally, this will eliminate the white space between each `Kernel Execution` in `Fig. 5`. The diagram below illustrates this conceptually, notice how the idle periods and delays (crossed out in pink) are removed when using CUDA graphs:
 
 <div class="figure">
-  <img src="/images/visionrt/graph3.png" alt="CUDA graph drawing">
+  <img src="/images/visionrt/graph3.png" alt="CUDA graph drawing"  width="600">
   <p class="figure-caption">Fig. 6: Conceptual illustration to show the benefit of CUDA graphs.</p>
 </div>
 
@@ -480,7 +483,7 @@ if node.op == "call_function" and node.target == F.batch_norm:
         	if not convBias: create_bias(parent)
         	convBias_new = (convBias - mean.value) * bnW.value * inv_sqrt_var_eps + bnBias.value
 ```
-<small>*Note:* The derivation for the folded parameters is found in Appendix II.</small>
+<small>*Note:* The derivation for the folded parameters is found in <a href="#appendix-ii">Appendix II</a>.</small>
 
 And now the custom backend:
 
@@ -569,12 +572,296 @@ Let's revisit the profile summary used to determine the bottlenecks shown in `Fi
   <p class="figure-caption">Fig. 10: Result of profiling the baseline with nsys and nvtx</p>
 </div>
 
-TODO
+Recall that we calculated the [headroom](#:~:text=1%2E126ms) for optimization to be only around ~1ms, so we'll mostly focus on writing a fast path with zero unnecessary overhead, as we are not bound by the design decisions large general frameworks like OpenCV are.
 
-## Surprisingly Deterministic
+As discussed in our lower bound calculation, this section will focus on creating a pipeline that requires only a single memcpy and a minimal preprocessing kernel.
+
+# Streaming Frames
+
+To interface with any hardware, we need drivers. V4L2 (Video4Linux2) is a low-level Linux API that provides a collection of device drivers for real-time video capture.
+
+To guide development, I designed the camera module to be conveniently used from Python as follows:
+
+```python
+camera = Camera("/dev/video0")
+for frame in camera.stream():
+    ....
+```
+
+So we'll need to implement a streaming function, along with low-level systems programming tasks such as managing file descriptors, checking camera compatibility, selecting a format, and providing other convenience functions.
+
+### The Boring:
+
+Methods for file descriptor managment:
+```cpp
+int open_camera(const char*)
+void close_camera(void)
+```
+
+Method for camera compatibility:
+```cpp
+void check_capabilities(void)
+```
+
+Methods for format selection:
+```cpp
+void fetch_formats(void)
+void set_format(const int)
+```
+
+Methods for convenience:
+```cpp
+void list_formats(void)
+void print_format(void)
+```
+
+
+### The Not-So-Boring:
+*Best Camera Format?*
+
+Aside from streaming, the only other feature beyond the boring ioctl calls was automatically selecting the best format for convenience.
+
+To the user, the only attributes of a camera format that matter is its resolution and framerate, which are inversely correlated due to the camera’s fixed bandwidth. For example, a higher resolution requires more bandwidth, thus more time, resulting in a lower framerate. So if we want a higher framerate, we need to select a lower resolution.
+
+So I experimented with a heuristic that seems to work well enough:
+```cpp
+// score = alpha * log( sqrt(w * h) ) + beta * log(fps)
+inline double fmt_score(double fps, int w, int h, double alpha = 1.5, double beta = 1.5) {
+    if (fps <= 0 || w <= 0 || h <= 0) {
+        return -INFINITY;
+    }
+
+    const double lin = std::sqrt(static_cast<double>(w) * static_cast<double>(h));
+    return alpha * std::log(lin) + beta * std::log(fps);
+}
+```
+It's pretty straightforward. The score combines the framerate with a "linearized" resolution, achieved by taking the square root of the product of width and height. Applying the logarithm helps with "numerical stability", while the alpha and beta weights determine the relative importance of each factor.
+
+*Streaming:*
+
+We'll first need a ring buffer, V4L2 will mange the scheduling for the ring buffer under the hood, I just need to provde the buffers where the dequeued frame will be stored in:
+
+```cpp
+struct CameraBuffer {
+    void* start;
+    v4l2_buffer v4l_buf;
+};
+
+class CameraRingBuffer{
+    private:
+        CameraBuffer* buffers;
+        ...
+}
+```
+
+Also, V4L2 allows for [mmap-streaming](https://www.kernel.org/doc/html/v4.8/media/uapi/v4l/mmap.html#streaming-i-o-memory-mapping) if the camera is compatible. Meaning we can avoid an entire memory copy by memory mapping the frame buffers directly from kernel space into user space!
+
+```cpp
+buffer.start = mmap(NULL, buffer.length(), PROT_READ | PROT_WRITE, MAP_SHARED, fd, buffer.v4l_buf.m.offset);
+```
+
+We also need to wrap the data in the buffer into a usable tensor on the device:
+```cpp
+torch::Tensor get_frame(size_t idx) {
+    void* src = h_ring.buffer_start(idx);
+    size_t size = h_ring.buffer_length(idx);
+    
+    auto options = torch::TensorOptions()
+        .dtype(torch::kUInt8)
+        .device(torch::kCUDA)
+        .pinned_memory(true);
+
+    auto frame = torch::empty(..., options);
+    
+    cudaMemcpy(frame.data_ptr(), src, size, cudaMemcpyHostToDevice);
+    
+    return frame;
+}
+``` 
+This requires at least one memory copy, since the GPU essentially operates as its own device with memory that is isolated from the host’s memory.
+
+Finally, to complete the API design aformentioned, we need to create a Pythonic iterable that yields a frame as soon as a buffer is dequeued:
+
+```cpp
+torch::Tensor __next__() {
+    if (!cam->is_streaming) {
+        cam->start_streaming();
+    }
+
+    int idx = cam->dequeue_buffer();
+    if (idx == -1) {
+        throw py::stop_iteration();
+    }
+
+    auto frame = cam->get_frame(idx);
+    cam->queue_buffer(idx);
+
+    return frame;
+}
+```
+
+The Camera module is now complete, and fame acquisition process is depicted as follows:
+
+```
+V4L2 Driver Ring Buffer [kernel space]
+  ↓ (zero-copy mmap)4
+User Space Pointer [pinned memory]
+  ↓ (single cudaMemcpy)
+Device Buffer [pre-allocated]
+  ↓ (zero-copy tensor wrap)
+```  
+
+
+... however, the frames are in a colorspace ([YUYV](https://www.kernel.org/doc/html/v4.8/media/uapi/v4l/pixfmt-yuyv.html)) that is not compatible with most modern pretrained computer vision models. So, we need to preprocess them.
+
+# Preprocessing Frames
+
+I made sure to decouple preprocessing from frame acquisition, allowing users to apply their own preprocessing functions at the Python level, as follows:
+
+```python
+def preprocess(x: torch.Tensor) -> torch.Tensor:
+    ...
+
+camera = Camera("/dev/video0")
+for frame in camera.stream():
+    frame = preprocess(frame)
+    ...
+```
+
+ResNet expects input tensors in normalized RGB color format, arranged as `(batch_size, channels, height, width)`. The YUYV format from the camera encodes color differently, each pixel pair shares UV (chroma) values to save bandwidth.
+
+The naive approach using standard libraries:
+
+``` python
+rgb = cv2.cvtColor(frame, cv2.COLOR_YUYV2RGB) # colorspace conversion - 1 roundtrip
+chw = np.transpose(rgb, (2, 0, 1)) # reshaping - 1 roundtrip
+tensor = torch.from_numpy(chw).unsqueeze(0).cuda().float() # memory copy 
+tensor = ((tensor / 255.0) - mean) / std # normalization - 3 roundtrips
+```
+This process results in approximately five memory roundtrips for each frame!
+
+However, by using a custom preprocessing kernel that fuses colorspace conversion, normalization, and reshaping into a single operation, we can reduce these memory roundtrips to just one.
+
+**CUDA** 
+```cpp
+__global__ void yuyv2rgb_kernel(
+    const uint32_t* yuyv,
+    float* rgb,
+    int num_pairs,
+    int stride,
+    float scale_r, float scale_g, float scale_b,
+    float offset_r, float offset_g, float offset_b
+)
+```
+
+**Triton**
+```python
+@triton.jit
+def _yuyv2rgb_kernel(
+    yuyv_ptr,
+    out_ptr,
+    stride,
+    num_pairs,
+    SCALE_R: tl.constexpr, SCALE_G: tl.constexpr, SCALE_B: tl.constexpr,
+    OFFSET_R: tl.constexpr, OFFSET_G: tl.constexpr, OFFSET_B: tl.constexpr,
+    BLOCK_SIZE: tl.constexpr,
+) -> None
+```
+You can view the full implementations here:
+
+- **CUDA:** [csrc/kernels.cu](https://github.com/abiel-almonte/visionrt/blob/master/csrc/kernels.cu)
+- **Triton:** [visionrt/preprocess.py](https://github.com/abiel-almonte/visionrt/blob/master/visionrt/preprocess.py)
+
+
+# Was it Worth It?
+
 <div class="figure">
-  <img src="/images/visionrt/latency_kde.png" alt="Deterministic Latency">
-  <p class="figure-caption">Fig. 11: visionrt achieves deterministic sub-12ms latency while OpenCV varies unpredictably from 20-30ms</p>
+  <img src="/images/visionrt/capture_profile.png" alt="">
+  <p class="figure-caption">Fig. 11: Result of profiling capture and preprocessing</p>
 </div>
 
+**Well, no—not really**, we only shaved off like `20 µs` from preprocessing.
+
+Honestly, that was expected. However, our efforts were not entirely wasted. We observed that both cameras exhibit a high standard deviation of over `1.5 ms`. Now that we have full control over the camera, we can pace frame capture to ensure frames are received exactly at the expected frame interval.
+
+Looking more closely at `Fig. 11`, we see that the frame period fluctuates between the expected `11.3 ms` and an unexpected `7.7 ms`, meaning standard deviation is caused by the frames dequeuing too early.
+
+So addresing the jitter is simple, I will introduce a mechanism to wait for the remainder of the frame interval by sleeping as needed:
+
+```cpp
+if (deterministic_ && last_frame_time_) {
+    Duration target_interval(1.0 / fps());
+    auto elapsed = Clock::now() - *last_frame_time_;
+    if (elapsed < target_interval) {
+        std::this_thread::sleep_for(target_interval - elapsed);
+    }
+}
+```
+
+I will also allow the user to opt-in for camera pacing at the Python level:
+
+```python
+cam = Camera("/dev/video0", deterministic=True)
+```
+
+Now we can see the significant drop in standard deviation since we have implemented pacing:
+
+<div class="figure">
+  <img src="/images/visionrt/capture_profile2.png" alt="">
+  <p class="figure-caption">Fig. 12: Result of profiling capture and preprocessing after pacing</p>
+</div>
+
+
+These results are broken down below to heighlight the improvements for capture:
+
+| Version | Avg Latency | Latency Reduction | StdDev | Variance Reduction |
+|-------------------|-------------|-------------------|---------|-------------------|
+| Baseline | 11.3 ms | — | 1.53 ms | — |
+| V4L2 | 11.3 ms | 0% | 1.53 ms | 0% |
+| **V4L2 w/ Pacing** | 11.3 ms | 0% | **141.635 µs** | **99.1%** |
+
+<small>*Note:* Preprocessing was negligible and thus omitted from the table.</small>  
+
+With just pacing we have reduced the standard deviation from `1.529 ms` to just `141.635 µs`!
+
+Now, this was **<small>a little</small>** worth it.
+
+## Surprisingly Deterministic
+
+<div class="figure">
+  <img src="/images/visionrt/e2e_profile.png" alt="End-to-end Results">
+  <p class="figure-caption">Fig. 14: Result of profiling visionrt and the baseline end-to-end.</p>
+</div>
+
+| Version      | Avg Latency | Latency Reduction | Overhead   | Overhead Reduction | StdDev    | Variance Reduction |
+|--------------|-------------|-------------------|------------|--------------------|-----------|-------------------|
+| Baseline     | 21.8 ms     | —                 | 10.7 ms    | —                  | 5 ms      | —                 |
+| **VisionRT** | **11.3 ms** | **48.2%**         | **0.2 ms** | **98.1%**          | **137 µs**| **99.9%**         |
+
+The overhead is only about `200 µs` with a jitter of `137 µs`, predominantly coming from capture.
+
+We have reduced the overhead by so much that the average latency is now practically limited only by the camera’s refresh rate!
+
+
+Here is a nice histogram on the profiling trace:
+
+<div class="figure">
+  <img src="/images/visionrt/latency_histogram.png" alt="Deterministic Latency">
+  <p class="figure-caption">Fig. 15: visionrt achieves deterministic sub-12ms latency while the baseline varies unpredictably from 20-30ms</p>
+</div>
+
+
 TODO
+
+## Appendix
+
+# Appendix I
+TODO
+
+# Appendix II
+The following shows how batch normalization can be embedded into the weights and biases of a convolution kernel post-training:
+<div class="figure">
+  <img src="/images/visionrt/appendix2.png" alt="conv-bn Derivation">
+  <p class="figure-caption">Fig. 16: Derivation for conv-bn folding</p>
+</div>
+
