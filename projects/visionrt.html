@@ -958,12 +958,12 @@ for frame in camera.stream():
 
 <p>The naive approach using standard libraries:</p>
 
-<pre><code class="language-python">rgb = cv2.cvtColor(frame, cv2.COLOR_YUYV2RGB) # colorspace conversion - 1 roundtrip
-chw = np.transpose(rgb, (2, 0, 1)) # reshaping - 1 roundtrip
+<pre><code class="language-python">rgb = cv2.cvtColor(frame, cv2.COLOR_YUYV2RGB) # colorspace conversion
+chw = np.transpose(rgb, (2, 0, 1)) # reshaping
 tensor = torch.from_numpy(chw).unsqueeze(0).cuda().float() # memory copy
-tensor = ((tensor / 255.0) - mean) / std # normalization - 3 roundtrips</code></pre>
+tensor = ((tensor / 255.0) - mean) / std # normalization</code></pre>
 
-<p>This process results in approximately five memory roundtrips for each frame!</p>
+<p>This process results in  multiple memory roundtrips for each frame.</p>
 
 <p>However, by using a custom preprocessing kernel that fuses colorspace conversion, normalization, and reshaping into a single operation, we can reduce these memory roundtrips to just one.</p>
 
