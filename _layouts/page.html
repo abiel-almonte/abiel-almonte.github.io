@@ -1,0 +1,24 @@
+---
+layout: base
+---
+<!--
+  Page layout - for general pages (home, projects list, about, etc.)
+
+  Options (in front matter):
+    show_title: true    - displays page.title as h1
+    wide: true          - uses wider container (1100px vs 768px)
+-->
+
+<article class="article-wrapper">
+  <div class="{% if page.wide %}container-wide{% else %}container{% endif %}">
+    {% if page.show_title %}
+    <header class="article-header">
+      <h1 class="title">{{ page.title }}</h1>
+    </header>
+    {% endif %}
+
+    <div class="content">
+      {{ content }}
+    </div>
+  </div>
+</article>
