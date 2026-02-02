@@ -1,0 +1,1173 @@
+---
+layout: project
+title: "VisionRT"
+subtitle: "Deterministic Inference via Vertical Optimization"
+permalink: /projects/visionrt/
+date: 2026-02-01
+email: abielalmonte.eng@gmail.com
+code_url: https://github.com/abiel-almonte/visionrt
+---
+
+<p>VisionRT is a case study in vertical optimization. How do you take a computer vision pipeline and reduce overhead so drastically that you can predict to the microsecond when it will finish?</p>
+
+<p>This matters because safety-critical real-time systems don't just need fast inference, they need <em>predictable</em> inference. A pipeline that averages 10ms but occasionally spikes to 30ms can miss deadlines and drop frames.</p>
+
+<p>The philosophy here is creating a system sculpted for our specific use case by optimizing every layer from frame capture to model execution.</p>
+
+<p>The end result is a pipeline that processes frames so efficiently it just waits for the camera:</p>
+<div class="figure">
+  <img src="/images/visionrt/visionrt2.png" alt="Zero overhead">
+  <p class="figure-caption">Fig. 1: VisionRT fits within the 90 FPS frame budget. The baseline pipeline struggles to keep up.</p>
+</div>
+
+<p>Here's how we got there.</p>
+
+<h3>1. Finding the Bottleneck</h3>
+
+<p>Throughout the rest of the blog, I will use <code>nsys</code> to profile the image classification pipeline in search of potential areas for optimization.</p>
+
+<p>The pipeline is split into 3 stages:</p>
+<ul>
+  <li><strong>Capture</strong> - Fetching the frame buffer.</li>
+  <li><strong>Preprocessing</strong> - Creating a PyTorch-compatible tensor.</li>
+  <li><strong>Inference</strong> - ResNet50's forward propagation.</li>
+</ul>
+
+<p>These stages are abstracted in the following profiled code:</p>
+
+<pre><code class="language-python">@nvtx.annotate("standard", color="blue")
+def run_standard(cap, model):
+    frame = capture_overhead(cap)
+    if frame is False:
+        return False
+
+    tensor = preprocessing(frame)
+    inference(tensor, model)
+
+    return True</code></pre>
+
+<p>Here are the summary after profiling 10K samples post-warmup:</p>
+
+<div class="figure">
+  <img src="/images/visionrt/profile_stats1.png" alt="Inference profile overview">
+  <p class="figure-caption">Fig. 2: Result of profiling with nsys and nvtx</p>
+</div>
+
+<div class="callout">
+  <strong>Key Finding:</strong> <code>Capture</code> and <code>Inference</code> dominate the latency with an average of <code>12.2 ms</code> and <code>9.4 ms</code>, respectively. We also observe significant variance in both stages' latency, which can violate real-time system requirements.
+</div>
+
+<p>Assuming average latency, let's analyze the potential cascading effect.</p>
+
+<h3>2. Quantifying the Impact</h3>
+
+<p>For our baseline pipeline with negligible preprocessing overhead:</p>
+
+<ol>
+  <li>Mean capture latency: <code>12.2 ms</code></li>
+  <li>Mean inference latency: <code>9.4 ms</code></li>
+  <li>Total pipeline latency: <code>21.6 ms per frame</code></li>
+</ol>
+
+<p>The camera operates at <code>90 Hz</code>, establishing a frame period of <code>11.11 ms</code>. This represents our real-time budget, the maximum processing time to maintain synchronous operation.</p>
+
+<p>With <code>21.6 ms</code> actual processing time, we accumulate <code>10.49 ms</code> of delay per frame processed. This deficit compounds deterministically:</p>
+
+<p><strong>Analysis over 100 frames:</strong></p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Measurement</th>
+      <th>Calculation</th>
+      <th>Time</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Processing time</td>
+      <td><code>100 * 21.6 ms</code></td>
+      <td>2,160 ms</td>
+    </tr>
+    <tr>
+      <td>Real time elapsed</td>
+      <td><code>100 * 11.11 ms</code></td>
+      <td>1,111 ms</td>
+    </tr>
+    <tr>
+      <td><strong>Accumulated deficit</strong></td>
+      <td><code>2,160 ms - 1,111 ms</code></td>
+      <td><strong>1,049 ms</strong></td>
+    </tr>
+  </tbody>
+</table>
+
+<p>This <code>1.05 second</code> deficit corresponds to <code>94</code> dropped frames (<code>1,049 ms // 11.11 ms</code>).</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Metric</th>
+      <th>Calculation</th>
+      <th>Result</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Efficiency</td>
+      <td><code>100 frames processed / 194 frames produced</code></td>
+      <td>51.4%</td>
+    </tr>
+    <tr>
+      <td><strong>Effective throughput</strong></td>
+      <td><code>51.4% * 90 FPS</code></td>
+      <td><strong>46.3 FPS</strong></td>
+    </tr>
+  </tbody>
+</table>
+
+<p>The baseline pipeline is therefore latency-bound by a factor of <code>~2x</code>, explaining the observed degradation from <code>90 FPS</code> to <code>~45 FPS</code> under sustained load. The system cannot operate at the camera's native frame rate.</p>
+
+<p>Now we'll determine whether to target <code>Capture</code> or <code>Inference</code> first. To maximize potential gains, we'll calculate their lower bound to see which stage has more headroom.</p>
+
+<h3>3. Calculating the Lower Bound</h3>
+
+<p><strong>Pipeline Specifications:</strong></p>
+<table>
+  <thead>
+    <tr>
+      <th>Component</th>
+      <th>Specification</th>
+      <th>Value</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Resolution</td>
+      <td>320 x 240</td>
+      <td>76,800 pixels</td>
+    </tr>
+    <tr>
+      <td>Frame Format</td>
+      <td>YUYV (4:2:2)</td>
+      <td>2 bytes/pixel</td>
+    </tr>
+    <tr>
+      <td>Frame Buffer</td>
+      <td>320 x 240 x 2</td>
+      <td>153.6 KB</td>
+    </tr>
+    <tr>
+      <td>Refresh Rate</td>
+      <td>90 Hz</td>
+      <td>11.11ms period</td>
+    </tr>
+    <tr>
+      <td>Interface</td>
+      <td>USB 2.0</td>
+      <td>60 MB/s bandwidth</td>
+    </tr>
+    <tr>
+      <td>GPU PCIe</td>
+      <td>RTX 5080</td>
+      <td>960 GB/s bandwidth</td>
+    </tr>
+    <tr>
+      <td>GPU FPU</td>
+      <td>RTX 5080</td>
+      <td>56.28 TFLOPS</td>
+    </tr>
+  </tbody>
+</table>
+
+<h4>3.1 Capture Lower Bound</h4>
+
+<p>To establish a theoretical minimum for capture, I'll trace the data flow from camera to GPU-ready tensor.</p>
+
+<details>
+  <summary>Technical details (optional)</summary>
+  <div class="details-content">
+
+<h5>3.1.1 Frame Acquisition Time</h5>
+
+<table>
+  <thead>
+    <tr>
+      <th>Operation</th>
+      <th>Calculation</th>
+      <th>Time</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Camera frame period</td>
+      <td><code>1 / 90 Hz</code></td>
+      <td>11.11ms</td>
+    </tr>
+    <tr>
+      <td>USB 2.0 transfer</td>
+      <td><code>153.6 KB / 60 MB/s</code></td>
+      <td>2.02ms</td>
+    </tr>
+    <tr>
+      <td><strong>Frame acquisition</strong></td>
+      <td><code>max(11.11ms, 2.02ms)</code></td>
+      <td><strong>11.11ms</strong></td>
+    </tr>
+  </tbody>
+</table>
+
+<h5>3.1.2 Preprocessing Kernel Time</h5>
+
+<table>
+  <thead>
+    <tr>
+      <th>Operation</th>
+      <th>Calculation</th>
+      <th>Result</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Threads</td>
+      <td><code>153.6 KB / 4B</code></td>
+      <td>38.4K threads</td>
+    </tr>
+    <tr>
+      <td>Integer unpacking</td>
+      <td><code>56 ops x 38.4K threads</code></td>
+      <td><em>Not limiting</em></td>
+    </tr>
+    <tr>
+      <td>Compute</td>
+      <td><code>(12 ops x 38.4K threads) / 56.28 TFLOPS</code></td>
+      <td>8.2ns</td>
+    </tr>
+    <tr>
+      <td>Memory</td>
+      <td><code>(28 bytes x 38.4K threads) / 960 GB/s</code></td>
+      <td>1.12us</td>
+    </tr>
+    <tr>
+      <td><strong>Kernel time</strong></td>
+      <td><code>max(compute, memory)</code></td>
+      <td><strong>1.12us</strong></td>
+    </tr>
+  </tbody>
+</table>
+
+</div>
+</details>
+
+<p>
+Altogether, the capture stage yields a lower bound of approximately <code>11.11ms</code>. The overwhelming majority of the latency comes from acquiring the frame itself.
+</p>
+
+<h4>3.2 Inference Lower Bound</h4>
+
+<p>To establish a theoretical minimum for inference, I'll analyze the computational requirements of ResNet50 by examining a single convolution operation and scaling to the full network.</p>
+
+<details>
+<summary>Down the rabbit hole: Conv2d kernel analysis</summary>
+<div class="details-content">
+
+<h5>3.2.1 Analyzing Conv2d Operations</h5>
+<p>I wrote a naive 2D convolution kernel to understand the exact operations required:</p>
+
+<pre><code class="language-cpp">    // block parallelize over the first three for-loops.
+    const int batch = blockIdx.x * blockDim.x + threadIdx.x;
+    const int out_channel = blockIdx.y * blockDim.y + threadIdx.y;
+    const int out_row = blockIdx.z * blockDim.z + threadIdx.z;
+
+    if (batch >= bs || out_channel >= out_ch || out_row >= out_h) {
+        return;
+    }
+
+    // thread parallelize over the the 4th for-loop.
+    for (int out_col = threadIdx.x; out_col < out_w; out_col += blockDim.x) {
+
+      auto dot_product = (T) 0;
+
+      for (int in_channel = 0; in_channel < in_ch; in_channel += 1){
+            for (int filter_row = 0; filter_row < f_h; filter_row += 1){
+                for (int filter_col = 0; filter_col < f_w; filter_col += 1){
+
+                    const T filter_element = filter[out_channel][in_channel][filter_row][filter_col];
+
+                    const int image_row = filter_row + out_row * stride;
+                    const int image_col = filter_col + out_col * stride;
+                    const T image_element = image[batch][in_channel][image_row][image_col];
+
+                    dot_product += filter_element * image_element;
+                }
+            }
+        }
+
+        out[batch][out_channel][out_row][out_col] = dot_product;
+    }</code></pre>
+
+<p>Each output element requires approximately:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Metric</th>
+      <th>Formula</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Compute</td>
+      <td><code>ceil(out_w / blockdim.x) x (in_ch x f_h x f_w) MACs</code></td>
+    </tr>
+    <tr>
+      <td>Memory</td>
+      <td><code>4 x ceil(out_w / blockdim.x) x [2 x (in_ch x f_h x f_w) + 1] Bytes</code></td>
+    </tr>
+  </tbody>
+</table>
+
+<p><small><em>Note:</em> <code>out_w = 1 + (in_h - f_h) // stride</code></small></p>
+
+<p>The formula for the kernel's total FLOPs and MBs, assuming all threads launched do work, become the following:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Metric</th>
+      <th>Formula</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>FLOPs per Thread</td>
+      <td><code>2 x ceil(out_w / blockdim.x) x in_ch x f_h x f_w</code></td>
+    </tr>
+    <tr>
+      <td>MBs per Thread</td>
+      <td><code>4 x ceil(out_w / blockdim.x) x [2 x (in_ch x f_h x f_w) + 1] x 1e-6</code></td>
+    </tr>
+    <tr>
+      <td>Threads per Block</td>
+      <td><code>blockdim.x x blockdim.y x blockdim.z</code></td>
+    </tr>
+    <tr>
+      <td>Number of Blocks</td>
+      <td><code>ceil(bs / blockdim.x) x ceil(out_ch / blockdim.y) x ceil(out_h / blockdim.z)</code></td>
+    </tr>
+    <tr>
+      <td><strong>Total est. FLOPs</strong></td>
+      <td><code>FLOPs per Thread x Threads per Block x Number of Blocks</code></td>
+    </tr>
+    <tr>
+      <td><strong>Total est. MBs</strong></td>
+      <td><code>MBs per Thread x Threads per Block x Number of Blocks</code></td>
+    </tr>
+  </tbody>
+</table>
+
+<p><small><em>Note:</em> Each multiply-accumulate (MAC) counts as 2 FLOPs</small></p>
+
+<p>Despite the verbosity, the total FLOPs can be nicely simplified into the following well-known formula when the tensor shapes are "nice".</p>
+
+<pre><code class="language-plaintext">Total FLOPs = 2 x bs x (f_h x f_w x in_ch) x (out_h x out_w x out_ch)</code></pre>
+
+<p><small><em>Note:</em> <code>Total FLOPs &lt;= Total est. FLOPs</code> - shown in <a href="#appendix-i">Appendix I</a></small><br>
+
+<h5>3.2.2 Compute or Memory Bound?</h5>
+
+<p>We'll use a simple example to determine whether this kernel is compute or memory bound, assuming the following launch config:</p>
+
+<pre><code class="language-cpp">dim3 threadGrid(8, 8, 4); // 256 threads per block
+dim3 blockGrid(
+    (bs + 7) / 8, // batch dimension
+    (out_ch + 7) / 8, // out channel dimension
+    (out_h + 3) / 4 // out height dimension
+);</code></pre>
+
+<p>Given a <code>226x226</code> RGB image, <code>3x3</code> filter, and parameters <code>[stride=1, out_ch=64]</code>:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Per-Thread</th>
+      <th>Calculation</th>
+      <th>Result</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>out_w iters</td>
+      <td><code>ceil(224 / 8)</code></td>
+      <td>28 iterations</td>
+    </tr>
+    <tr>
+      <td>MACs</td>
+      <td><code>28 x (3 x 3 x 3)</code></td>
+      <td>756 MACs</td>
+    </tr>
+    <tr>
+      <td>reads</td>
+      <td><code>756 x 2 elements x 4B</code></td>
+      <td>6,048 bytes</td>
+    </tr>
+    <tr>
+      <td>writes</td>
+      <td><code>28 elements x 4B</code></td>
+      <td>112 bytes</td>
+    </tr>
+    <tr>
+      <td><strong>FLOPs</strong></td>
+      <td><code>756 x 2</code></td>
+      <td><strong>1,512 FLOPs</strong></td>
+    </tr>
+    <tr>
+      <td><strong>Total memory</strong></td>
+      <td><code>6,048 + 112</code></td>
+      <td><strong>6,160 bytes</strong></td>
+    </tr>
+  </tbody>
+</table>
+
+<table>
+  <thead>
+    <tr>
+      <th>Device-Wide</th>
+      <th>Calculation</th>
+      <th>Result</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Total Threads</td>
+      <td><code>1 batch x 8 out_ch_blocks x 56 out_h_blocks x 256 threads/block</code></td>
+      <td>114,688 threads</td>
+    </tr>
+    <tr>
+      <td>Compute</td>
+      <td><code>(1,512 ops x 114,688 threads) / 56.28 TFLOPS</code></td>
+      <td>3.08 us</td>
+    </tr>
+    <tr>
+      <td>Memory</td>
+      <td><code>(6,160 bytes x 114,688 threads) / 960 GB/s</code></td>
+      <td>0.736 ms</td>
+    </tr>
+    <tr>
+      <td><strong>naive Kernel time</strong></td>
+      <td><code>max(compute, memory)</code></td>
+      <td><strong>0.736 ms</strong></td>
+    </tr>
+  </tbody>
+</table>
+
+<p>The kernel is clearly memory-bound. Based on this analysis, we'd expect convolution to take around <code>0.7 ms</code>.</p>
+
+<p>However, when profiling convolution directly on PyTorch</p>
+
+<pre><code class="language-python">@nvtx.annotate("conv_pytorch", color="black")
+def conv(x, w):
+    return F.conv2d(x, w, stride=[1,1])</code></pre>
+
+<p>the results were shocking:</p>
+
+<div class="figure">
+  <img src="/images/visionrt/conv_cudnn_profile.png" alt="">
+  <p class="figure-caption">Fig. 3: Result of profiling cuDNN convolution</p>
+</div>
+
+<p>The convolution kernel averaged just <code>15 us</code> and a minimum of <code>14.8 us</code>! Surprisingly, this actually aligns with the following formula for the <em>optimal</em> kernel, where data is moved only once for input, weight, and output.</p>
+
+<table>
+  <thead>
+    <tr>
+      <th></th>
+      <th>Calculation</th>
+      <th>Result</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Input</td>
+      <td><code>4 x bs x in_ch x in_h x in_w</code></td>
+      <td>612912 bytes</td>
+    </tr>
+    <tr>
+      <td>Weight</td>
+      <td><code>4 x f_h x f_w x in_ch x out_ch</code></td>
+      <td>6912 bytes</td>
+    </tr>
+    <tr>
+      <td>Output</td>
+      <td><code>4 x bs x out_ch x out_h x out_w</code></td>
+      <td>12845056 bytes</td>
+    </tr>
+    <tr>
+      <td><strong>cuDNN Kernel time</strong></td>
+      <td><code>(Input + Weight + Output) / 960 GB/s</code></td>
+      <td><strong>0.14 us</strong></td>
+    </tr>
+  </tbody>
+</table>
+
+<p>Knowing this we can extrapolate the same formula to the entire model to find the lower bound, with the assumption that memory bandwidth is the limiting factor.</p>
+
+</div>
+</details>
+
+<p>Below is the ResNet50 architecture, the core convolution operations are boxed in light red:</p>
+
+<div class="figure">
+  <img src="/images/visionrt/resnet50_flops.png" alt="ResNet Layers">
+  <p class="figure-caption">Fig. 4: ResNet model architecture, taken from "Deep Residual Learning for Image Recognition" by Kaiming He et al. (2015).</p>
+</div>
+
+<table>
+  <thead>
+    <tr>
+      <th>Stage</th>
+      <th>Calculation</th>
+      <th>Latency</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>conv1</td>
+      <td><code>7.67 MB / 960 GB/s</code></td>
+      <td>0.01 ms</td>
+    </tr>
+    <tr>
+      <td>conv2</td>
+      <td><code>31.36 MB / 960 GB/s</code></td>
+      <td>0.03 ms</td>
+    </tr>
+    <tr>
+      <td>conv3</td>
+      <td><code>30.54 MB / 960 GB/s</code></td>
+      <td>0.03 ms</td>
+    </tr>
+    <tr>
+      <td>conv4</td>
+      <td><code>45.97 MB / 960 GB/s</code></td>
+      <td>0.05 ms</td>
+    </tr>
+    <tr>
+      <td>conv5</td>
+      <td><code>64.99 MB / 960 GB/s</code></td>
+      <td>0.07 ms</td>
+    </tr>
+    <tr>
+      <td>fc</td>
+      <td><code>8.2 MB / 960 GB/s</code></td>
+      <td>0.01 ms</td>
+    </tr>
+    <tr>
+      <td><strong>Inference lower bound</strong></td>
+      <td><code>conv1 + ... + conv5 + fc</code></td>
+      <td><strong>0.2 ms</strong></td>
+    </tr>
+  </tbody>
+</table>
+
+<p>So inference yields a lower bound of approximately <code>0.2ms</code>, which does seem a bit too low. In fact, I might even be off here, but the exact number isn't what matters. What's clear is that inference has plenty of overhead to minimize.</p>
+
+<p>Here are the lower bounds compared side by side:</p>
+<table>
+  <thead>
+    <tr>
+      <th>Stage</th>
+      <th>Lower Bound</th>
+      <th>Headroom</th>
+      <th>Possible Reduction in Latency (%)</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Capture</td>
+      <td>11.11ms</td>
+      <td>1.126ms</td>
+      <td>9%</td>
+    </tr>
+    <tr class="highlight">
+      <td>Inference</td>
+      <td>0.2ms</td>
+      <td>9.167ms</td>
+      <td>98%</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="callout">
+  <strong>Key Insight:</strong> Inference has 98% optimization headroom vs only 9% for capture. This makes inference the clear target for optimization.
+</div>
+
+<p>So knowing that <code>Inference</code> has significantly more headroom than <code>Capture</code>, let's take a closer look into <code>Inference</code>...</p>
+
+<h3>4. Optimizing Inference</h3>
+<p>
+During inference, two main time sinks stand out: the overhead of scheduling computations, and the computations themselves. Here, we'll focus on optimizing both by leveraging CUDA graphs and the PyTorch compiler.
+</p>
+
+<details>
+<summary>Skip or dive deep</summary>
+<div class="details-content">
+
+<h4>4.1 Eliminating Scheduling Overhead</h4>
+
+<pre><code class="language-python">@nvtx.annotate("inference", color="red")
+def inference(tensor, model):
+    _ = model(tensor)
+    torch.cuda.synchronize()</code></pre>
+
+<p>Here we zoom into a single <code>Inference</code> sample on the profiler:</p>
+
+<div class="figure">
+  <img src="/images/visionrt/inference_profile1.png" alt="Inference profile overview">
+  <p class="figure-caption">Fig. 5: An annotated view of ResNet50 inference on nsys's profiler</p>
+</div>
+
+<p><code>Fig. 5</code> is how the profiler looks for every GPU kernel executed. For each kernel the following work must be done.</p>
+
+<ol>
+  <li><strong>CPU work</strong> - Framework overhead and CPU computation before launch.</li>
+  <li><strong>Kernel Launch</strong> - CPU enqueues kernel into CUDA stream.</li>
+  <li><strong>GPU Scheduling</strong> - GPU schedules kernel when resources are met.</li>
+  <li><strong>Kernel Execution</strong> - GPU performs computation asynchronously.</li>
+  <li><strong>Synchronization</strong> (if needed) - Host blocks on CUDA sync or blocking API call.</li>
+</ol>
+
+<p>We can minimize the overhead and jitter surrounding kernel execution by capturing the <a href="https://pytorch.org/blog/accelerating-pytorch-with-cuda-graphs/">CUDA graph</a> and replaying it each iteration with a single kernel launch as long as the shapes and computation remain static.</p>
+
+<p>Here we record the computational graph of the forward function <code>fn</code> from PyTorch's default CUDA stream.</p>
+
+<pre><code class="language-cpp">cudaStreamBeginCapture(stream, cudaStreamCaptureModeGlobal);
+{
+    c10::cuda::CUDAStream capture_stream = c10::cuda::getStreamFromExternal(stream, 0);
+    c10::cuda::CUDAStreamGuard guard(capture_stream);
+
+    out.copy_(fn(in).cast&lt;torch::Tensor&gt;());
+}
+cudaStreamEndCapture(stream, &amp;graph);</code></pre>
+
+<p>Ideally, this will eliminate the white space between each <code>Kernel Execution</code> in <code>Fig. 5</code>. The diagram below illustrates this conceptually, notice how the idle periods and delays (crossed out in pink) are removed when using CUDA graphs:</p>
+
+<div class="figure">
+  <img src="/images/visionrt/graph3.png" alt="CUDA graph drawing" style="max-width: 600px;">
+  <p class="figure-caption">Fig. 6: Conceptual illustration to show the benefit of CUDA graphs.</p>
+</div>
+
+<p>The black arrows represent the overhead/latency of CPU(H)-GPU(D) coordination.</p>
+
+<p>To see this overhead in the profiler, we can zoom into the CUDA API calls before and after each convolution kernel:</p>
+
+<div class="figure">
+  <img src="/images/visionrt/no_graph_overhead.png" alt="Convolution kernel overhead without CUDA graphs.">
+  <p class="figure-caption">Fig. 7: nsys view focused on CUDA API calls around kernel execution.</p>
+</div>
+
+<p><small><em>Note:</em> Profiled with <code>--cuda-trace-all-apis=true</code></small></p>
+
+<p>Nearly <strong>28 microseconds</strong> of CUDA API calls occur before and after the kernel executes!</p>
+
+<p>Overall, <code>Fig. 6</code> demonstrates how graph capture and replay eliminates communication between each operation, significantly reducing end-to-end latency. For workloads with many small kernels, this overhead can dominate execution time.</p>
+
+<h4>4.2 Accelerating Computation</h4>
+
+
+<p>While CUDA graphs eliminates scheduling overhead, we can focus on reducing the time on device by optimizing what happens within the graph.</p>
+
+<p>PyTorch's <code>torch.compile</code> is a simple to use tool that generates highly efficient Triton kernels. Underneath this tool exists a sophisticated native JIT compiler infrastructure:</p>
+
+<ol>
+  <li><strong>TorchDynamo</strong> - Captures Python code into a computational graph.</li>
+  <li><strong>Torch.fx</strong> - Intermediate representation that makes graph transformation easy.</li>
+  <li><strong>TorchInductor</strong> - Generates optimized Triton kernels from the graph.</li>
+</ol>
+
+<p>Let's see what <code>inductor</code> generates by default.</p>
+
+<pre><code class="language-python">compiled_model = torch.compile(model, backend="inductor", dynamic=False)</code></pre>
+
+<p>Inspecting the generated code reveals the following kernels:</p>
+
+<pre><code class="language-python">triton_poi_fused__native_batch_norm_legit_no_training_relu
+triton_poi_fused__native_batch_norm_legit_no_training_add_relu
+extern_kernels.convolution</code></pre>
+
+<p><code>inductor</code> already fused the batch norm with ReLU, and occasionally the residual add, but left convolution to an external kernel, typically implementations in cuDNN or CUTLASS, which are hard to beat.</p>
+
+<p>This is great. However, we don't actually need to compute batch normalization at inference time at all. In fact, constant folding the normalization into the convolution parameters is a common optimization pattern, eliminating an entire kernel and memory round-trip.</p>
+
+<p>Let's create the FX graph transformation:</p>
+
+<pre><code class="language-python">if node.op == "call_function" and node.target == F.batch_norm:
+    if parent.op == "call_function" and parent.target == F.conv2d:
+        ...
+        inv_sqrt_var_eps = (var.value + eps) ** -0.5
+        convW_new = convW.value * (bnW.value * inv_sqrt_var_eps).view(-1, 1, 1, 1)
+
+        if not convBias: create_bias(parent)
+        convBias_new = (convBias - mean.value) * bnW.value * inv_sqrt_var_eps + bnBias.value</code></pre>
+
+<p><small><em>Note:</em> The derivation for the folded parameters is found in <a href="#appendix-ii">Appendix II</a>.</small></p>
+
+<p>And now the custom backend:</p>
+
+<pre><code class="language-python">@register_backend
+def visionrt(gm: fx.GraphModule, ins):
+    if config.custom_optims:
+        ...
+        gm, ins = optimize_fx(
+            gm=gm,
+            placeholders=placeholders,
+            transformations=[xform for _, xform in enabled_xforms]
+        )
+    return compile_fx(gm, ins) # pass to inductor</code></pre>
+
+<p>We now observe that <code>inductor</code> generates a few different kernels:</p>
+
+<pre><code class="language-python">triton_poi_fused_convolution_relu
+triton_poi_fused_add_convolution_relu
+extern_kernels.convolution</code></pre>
+  
+<p>Matching a similar pattern as before, <code>inductor</code> is fusing convolution with ReLU, and the residual add if present. The following is a visual on how the computation graph was optimized:</p>
+
+<div class="figure">
+  <img src="/images/visionrt/graph_optims.png" alt="Computation Graph Optimizations">
+  <p class="figure-caption">Fig. 8: Before and after graph transformations</p>
+</div>
+
+<p>We can see how conv-bn folding created opportunities for <code>inductor</code> to fuse other operations with convolution by eliminating the batch norm barrier.</p>
+
+<p>While I was inspecting the generated Triton code for the <code>conv_relu</code> and <code>add_conv_relu</code> kernels:</p>
+
+<pre><code class="language-python">x2 = xindex
+x0 = (xindex % 256) # folded bias index
+tmp0 = tl.load(in_out_ptr0 + (x2), xmask)
+tmp1 = tl.load(in_ptr0 + (x0), xmask, eviction_policy='evict_last')
+tmp2 = tmp0 + tmp1 # bias add
+tmp3 = tl.full([1], 0, tl.int32)
+tmp4 = triton_helpers.maximum(tmp3, tmp2)
+tl.store(in_out_ptr0 + (x2), tmp4, xmask)</code></pre>
+
+<p>I noticed that the new bias appeared, confirming that our transformation worked!</p>
+
+<p>I also implemented manual fusing transformations such as <code>conv_relu</code>, <code>add_relu</code>, and <code>add_conv_relu</code> using CUDA, Triton, and cuDNN. However, they all resulted in regressions or negligible improvements that ruined the model's flexibility.</p>
+
+<p>Working <em>with</em> <code>inductor</code> was clearly the better approach.</p>
+
+</div>
+</details>
+
+<p>The figure below highlights the significant drop in inference times achieved with these optimizations:</p>
+
+<div class="figure">
+  <img src="/images/visionrt/Inference_profile2.png" alt="Inference profile overview">
+  <p class="figure-caption">Fig. 9: Result of profiling post inference optimizations with nsys and nvtx</p>
+</div>
+
+<p>These results are broken down to reveal the incremental improvements in both latency and predictability from each optimization:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Version</th>
+      <th>Avg Latency</th>
+      <th>Latency Reduction</th>
+      <th>StdDev</th>
+      <th>Variance Reduction</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Baseline</td>
+      <td>9.306 ms</td>
+      <td>-</td>
+      <td>2.939 ms</td>
+      <td>-</td>
+    </tr>
+    <tr>
+      <td>Inductor</td>
+      <td>7.949 ms</td>
+      <td><strong>14.6%</strong></td>
+      <td>2.360 ms</td>
+      <td><strong>19.7%</strong></td>
+    </tr>
+    <tr>
+      <td>Folding + Inductor (Fusing)</td>
+      <td>6.989 ms</td>
+      <td><strong>24.9%</strong></td>
+      <td>2.045 ms</td>
+      <td><strong>30.4%</strong></td>
+    </tr>
+    <tr>
+      <td><strong>Folding + Inductor (Fusing) + CUDA Graph</strong></td>
+      <td><strong>1.228 ms</strong></td>
+      <td><strong>86.8%</strong></td>
+      <td><strong>37.357 us</strong></td>
+      <td><strong>98.7%</strong></td>
+    </tr>
+  </tbody>
+</table>
+
+<p><small><em>Note:</em> Profiling script found <a href="https://github.com/Abiel-Almonte/visionrt/blob/master/examples/profile_inference.py">here</a></small></p>
+
+<p>The average inference latency drops from <code>9.3ms</code> to just <code>1.2ms</code> (<strong>86.8% reduction</strong>), and the standard deviation has decreased dramatically from <code>2.9ms</code> to just <code>37us</code>!</p>
+
+<p>Inference times are so predictable, it's practically deterministic. Notice how the median equals the average, implying a nearly perfect normal distribution.</p>
+
+<p>Now that <code>Inference</code> is no longer a bottleneck, let's tackle <code>Capture</code> overhead.</p>
+
+<h3>5. Optimizing Capture</h3>
+
+<p>Let's revisit the profile summary used to determine the bottlenecks shown in <code>Fig. 2</code>.</p>
+
+<div class="figure">
+  <img src="/images/visionrt/profile_stats3.png" alt="Inference profile overview">
+  <p class="figure-caption">Fig. 10: Result of profiling the baseline with nsys and nvtx</p>
+</div>
+
+<p>Recall that we calculated the headroom for optimization to be only around ~1ms, so we'll mostly focus on writing a fast path with zero unnecessary overhead, as we are not bound by the design decisions large general frameworks like OpenCV are.</p>
+
+<p>As discussed in our lower bound calculation, this section will focus on creating a pipeline that requires only a single memcpy and a minimal preprocessing kernel.</p>
+
+<details>
+<summary>Implementation details inside</summary>
+<div class="details-content">
+
+<h4>5.1 Streaming Frames</h4>
+
+<p>To interface with any hardware, we need drivers. V4L2 (Video4Linux2) is a low-level Linux API that provides a collection of device drivers for real-time video capture.</p>
+
+<p>To guide development, I designed the camera module to be conveniently used from Python as follows:</p>
+
+<pre><code class="language-python">camera = Camera("/dev/video0")
+for frame in camera.stream():
+    ....</code></pre>
+
+<p>So we'll need to implement a streaming function, along with low-level systems programming tasks such as managing file descriptors, checking camera compatibility, selecting a format, and providing other convenience functions.</p>
+
+<h5>5.1.1 The Boring</h5>
+
+<pre><code class="language-cpp">// File descriptor management
+int open_camera(const char*);
+void close_camera(void);
+
+// Camera compatibility check
+void validate_capabilities(void);
+
+// Format selection
+void discover_formats(void);
+void set_format(size_t);
+
+// Convenience methods
+void list_formats(void);
+void print_format(void);
+</code></pre>
+
+<h5>5.1.2 The Not-So-Boring</h5>
+
+<p><em>Best Camera Format?</em></p>
+
+<p>Aside from streaming, the only other feature beyond the boring ioctl calls was automatically selecting the best format for convenience. To the user, the only attributes of a camera format that matter is its resolution and framerate, which are inversely correlated due to the camera's fixed bandwidth. For example, a higher resolution requires more bandwidth, thus more time, resulting in a lower framerate. So if we want a higher framerate, we need to select a lower resolution. I experimented with a heuristic that seems to work well enough:</p>
+
+\[
+\text{score} = \alpha \cdot \log\left( \sqrt{\text{width} \cdot \text{height}} \right) + \beta \cdot \log(\text{fps}),
+\]
+
+
+<p>It's pretty straightforward. The score combines the framerate with a "linearized" resolution, achieved by taking the square root of the product of width and height. Applying the logarithm helps with "numerical stability", while the alpha and beta weights determine the relative importance of each factor.</p>
+
+<p><em>Streaming:</em></p>
+
+<p>We'll first need a ring buffer, V4L2 will manage the scheduling for the ring buffer under the hood, I just need to provide the buffers where the dequeued frame will be stored in. Also, V4L2 allows for <a href="https://www.kernel.org/doc/html/v4.8/media/uapi/v4l/mmap.html#streaming-i-o-memory-mapping">mmap-streaming</a> if the camera is compatible. Meaning we can avoid an entire memory copy by memory mapping the frame buffers directly from kernel space into user space!</p>
+
+<pre><code class="language-cpp">// Psuedo ring buffer
+class CameraRingBuffer{
+    struct CameraBuffer {
+        void* start;
+        v4l2_buffer v4l_buf;
+    };
+  
+    CameraBuffer* buffers;
+    ...
+}
+
+// Memory mapping
+buffer.start = mmap(NULL, buffer.length(), PROT_READ | PROT_WRITE, MAP_SHARED, fd, buffer.v4l_buf.m.offset);</code></pre>
+
+<p>We also need to wrap the data in the buffer into a usable tensor on the device:</p>
+
+<pre><code class="language-cpp">torch::Tensor get_frame(size_t idx) {
+    void* src = h_ring.buffer_start(idx);
+    size_t size = h_ring.buffer_length(idx);
+
+    auto options = torch::TensorOptions()
+        .dtype(torch::kUInt8)
+        .device(torch::kCUDA);
+
+    auto frame = torch::empty(..., options);
+
+    cudaMemcpy(frame.data_ptr(), src, size, cudaMemcpyHostToDevice);
+
+    return frame;
+}</code></pre>
+
+<p>Finally, to complete the API design aforementioned, we need to create a Pythonic iterable that yields a frame as soon as a buffer is dequeued:</p>
+
+<pre><code class="language-cpp">torch::Tensor __next__() {
+    if (!cam-&gt;is_streaming) {
+        cam-&gt;start_streaming();
+    }
+
+    int idx = cam-&gt;dequeue_buffer();
+    if (idx == -1) {
+        throw py::stop_iteration();
+    }
+
+    auto frame = cam-&gt;get_frame(idx);
+    cam-&gt;queue_buffer(idx);
+
+    return frame;
+}</code></pre>
+
+<p>The Camera module is now complete, and the frame acquisition process is depicted as follows:</p>
+
+<div class="figure float-right">
+  <img src="/images/visionrt/capture_pipeline.png" alt="">
+  <p class="figure-caption">Fig. 11: Schematic of the VisionRT camera frame acquisition pipeline.</p>
+</div>
+
+<p>You may have noticed there's no decoder in this pipeline. Thats because I intentionally avoided compressed pixel formats to eliminate the need for a decode step, thus removing its potential latency overhead entirely. But there is a tradeoff, we are limited to uncompressed, lower-resolution feeds, but this is reasonable for most computer vision models.</p>
+  
+<p>However, now the frames are in a colorspace (<a href="https://www.kernel.org/doc/html/v4.8/media/uapi/v4l/pixfmt-yuyv.html">YUYV</a>) that is not compatible with most modern pretrained computer vision models, so we need to preprocess them.</p>
+
+<h4>5.2 Preprocessing Frames</h4>
+
+<p>I made sure to decouple preprocessing from frame acquisition, allowing users to apply their own preprocessing functions at the Python level, as follows:</p>
+
+<pre><code class="language-python">def preprocess(x: torch.Tensor):
+    ...
+
+camera = Camera("/dev/video0")
+for frame in camera.stream():
+    frame = preprocess(frame)
+    ...</code></pre>
+
+<p>ResNet expects input tensors in normalized RGB color format, arranged as <code>(batch_size, channels, height, width)</code>. The YUYV format from the camera encodes color differently, each pixel pair shares UV (chroma) values to save bandwidth.</p>
+
+<p>The naive approach using standard libraries:</p>
+
+<pre><code class="language-python">rgb = cv2.cvtColor(frame, cv2.COLOR_YUYV2RGB) # colorspace conversion - 1 roundtrip
+chw = np.transpose(rgb, (2, 0, 1)) # reshaping - 1 roundtrip
+tensor = torch.from_numpy(chw).unsqueeze(0).cuda().float() # memory copy
+tensor = ((tensor / 255.0) - mean) / std # normalization - 3 roundtrips</code></pre>
+
+<p>This process results in approximately five memory roundtrips for each frame!</p>
+
+<p>However, by using a custom preprocessing kernel that fuses colorspace conversion, normalization, and reshaping into a single operation, we can reduce these memory roundtrips to just one.</p>
+
+<p><strong>CUDA</strong></p>
+
+<pre><code class="language-cpp">__global__ void yuyv2rgb_kernel(
+    const uint32_t* yuyv,
+    float* rgb,
+    int num_pairs,
+    int stride,
+    float scale_r, float scale_g, float scale_b,
+    float offset_r, float offset_g, float offset_b
+)</code></pre>
+
+<p><strong>Triton</strong></p>
+
+<pre><code class="language-python">@triton.jit
+def _yuyv2rgb_kernel(
+    yuyv_ptr,
+    out_ptr,
+    stride,
+    num_pairs,
+    SCALE_R: tl.constexpr, SCALE_G: tl.constexpr, SCALE_B: tl.constexpr,
+    OFFSET_R: tl.constexpr, OFFSET_G: tl.constexpr, OFFSET_B: tl.constexpr,
+    BLOCK_SIZE: tl.constexpr,
+) -&gt; None</code></pre>
+
+<p>You can view the full implementations here:</p>
+
+<ul>
+  <li><strong>CUDA:</strong> <a href="https://github.com/abiel-almonte/visionrt/blob/master/csrc/kernels.cu">csrc/kernels.cu</a></li>
+  <li><strong>Triton:</strong> <a href="https://github.com/abiel-almonte/visionrt/blob/master/visionrt/preprocess.py">visionrt/preprocess.py</a></li>
+</ul>
+
+
+<h4>5.3 Was it Worth It?</h4>
+
+<div class="figure">
+  <img src="/images/visionrt/capture_profile.png" alt="">
+  <p class="figure-caption">Fig. 12: Result of profiling capture and preprocessing</p>
+</div>
+
+<p><strong>Well, no-not really</strong>, we only shaved off like <code>20 us</code> from preprocessing.</p>
+
+<p>Honestly, that was expected. However, our efforts were not entirely wasted. We observed that both cameras exhibit a high standard deviation of over <code>1.5 ms</code>. Now that we have full control over the camera, we can pace frame capture to ensure frames are received exactly at the expected frame interval.</p>
+
+<p>Looking more closely at <code>Fig. 11</code>, we see that the frame period fluctuates between the expected <code>11.3 ms</code> and an unexpected <code>7.7 ms</code>, meaning standard deviation is caused by the frames dequeuing too early.</p>
+
+<p>So addressing the jitter is simple, I will introduce a mechanism to wait for the remainder of the frame interval by sleeping as needed:</p>
+
+<pre><code class="language-cpp">if (deterministic_ &amp;&amp; last_frame_time_) {
+  Duration target_interval(1.0 / fps());
+  auto elapsed = Clock::now() - *last_frame_time_;
+  if (elapsed &lt; target_interval) {
+    std::this_thread::sleep_for(target_interval - elapsed);
+  }
+}</code></pre>
+
+<p>Now we should expect a the significant drop in standard deviation since we have implemented pacing:</p>
+
+</div>
+</details> 
+
+
+<div class="figure">
+  <img src="/images/visionrt/capture_profile2.png" alt="">
+  <p class="figure-caption">Fig. 13: Result of profiling capture and preprocessing after pacing</p>
+</div>
+
+<p>These results are broken down below to highlight the improvements for capture:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Version</th>
+      <th>Avg Latency</th>
+      <th>Latency Reduction</th>
+      <th>StdDev</th>
+      <th>Variance Reduction</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Baseline</td>
+      <td>11.3 ms</td>
+      <td>-</td>
+      <td>1.53 ms</td>
+      <td>-</td>
+    </tr>
+    <tr>
+      <td>V4L2</td>
+      <td>11.3 ms</td>
+      <td>0%</td>
+      <td>1.53 ms</td>
+      <td>0%</td>
+    </tr>
+    <tr>
+      <td><strong>V4L2 + Pacing</strong></td>
+      <td>11.3 ms</td>
+      <td>0%</td>
+      <td><strong>141.635 us</strong></td>
+      <td><strong>99.1%</strong></td>
+    </tr>
+  </tbody>
+</table>
+
+<p><small><em>Note:</em> Preprocessing was negligible and thus omitted from the table.</small></p>
+
+<p>With just pacing we have reduced the standard deviation from <code>1.529 ms</code> to just <code>141.635 us</code>!</p>
+
+<p>Now, this was <strong><small>a little</small></strong> worth it.</p>
+
+<h3>6. Surprisingly Deterministic</h3>
+
+<div class="figure">
+  <img src="/images/visionrt/e2e_profile.png" alt="End-to-end Results">
+  <p class="figure-caption">Fig. 15: Result of profiling visionrt and the baseline end-to-end.</p>
+</div>
+
+<table>
+  <thead>
+    <tr>
+      <th>Version</th>
+      <th>Avg Latency</th>
+      <th>Latency Reduction</th>
+      <th>Overhead</th>
+      <th>Overhead Reduction</th>
+      <th>StdDev</th>
+      <th>Variance Reduction</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Baseline</td>
+      <td>21.8 ms</td>
+      <td>-</td>
+      <td>10.7 ms</td>
+      <td>-</td>
+      <td>5 ms</td>
+      <td>-</td>
+    </tr>
+    <tr>
+      <td><strong>VisionRT</strong></td>
+      <td><strong>11.3 ms</strong></td>
+      <td><strong>48.2%</strong></td>
+      <td><strong>0.2 ms</strong></td>
+      <td><strong>98.1%</strong></td>
+      <td><strong>137 us</strong></td>
+      <td><strong>99.9%</strong></td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="callout">
+  <strong>Result:</strong> The overhead is only about <code>200 us</code> with a jitter of <code>137 us</code>, predominantly coming from capture. We have reduced the overhead by so much that the average latency is now practically limited only by the camera's refresh rate!
+</div>
+
+<p>Here is a nice histogram on the profiling trace:</p>
+
+<div class="figure">
+  <img src="/images/visionrt/latency_histogram.png" alt="Deterministic Latency">
+  <p class="figure-caption">Fig. 16: visionrt achieves deterministic sub-12ms latency while the baseline varies unpredictably from 20-30ms</p>
+</div>
+
+<p>This orange narrow peak shows that we can expect image classifcation to complete at the webcam's refresh rate nearly <strong>100%</strong> of the time. In other words, <code>visionrt</code> is so fast and deterministic that are practically measuring the hardware!</p>
+
+<h3>7. Appendix</h3>
+<p>Contains extra technical details referenced in the main text.</p>
+
+<details>
+  <summary>Expand for appendix (optional)</summary>
+  <div class="details-content">
+
+<h4 id="appendix-i">7.1 Appendix I</h4>
+
+<p>Showing that Total est. FLOPS is the upper bound for Total FLOPs.</p>
+
+<p>Step 1. Expand and group terms:</p>
+<div class="figure">
+  <img src="/images/visionrt/appendixI1.png" alt="Appendix I step 1">
+</div>
+Step 2. Apply the ciling property:
+\[
+\left\lceil \frac{a}{b} \right\rceil \times b \geq a
+\]
+
+<div class="figure">
+  <img src="/images/visionrt/appendixI2.png" alt="Appendix I step 2">
+</div>
+
+<p>Step 3: Simplify to Total FLOPs:</p>
+
+<div class="figure">
+  <img src="/images/visionrt/appendixI3.png" alt="Appendix I step 3">
+</div>
+
+<p>Therefore, Total FLOPs ≤ Total est. FLOPs, with equality when all dimensions divide evenly ("nice").</p>
+<h4 id="appendix-ii">7.2 Appendix II</h4>
+
+<p>The following shows how batch normalization can be embedded into the weights and biases of a convolution kernel post-training:</p>
+
+<div class="figure">
+  <img src="/images/visionrt/appendix2.png" alt="conv-bn Derivation">
+  <p class="figure-caption">Fig. 17: Derivation for conv-bn folding</p>
+</div>
+  </div>
+</details>
