@@ -67,5 +67,25 @@ wide: true
         </div>
       </td>
     </tr>
+    <tr>
+      <td class="project-image-cell">
+        <img src="https://github.com/abiel-almonte/torq/raw/master/images/diagram.png" alt="torq architecture" class="project-image" onerror="this.style.display='none'">
+      </td>
+      <td class="project-content-cell">
+        <p class="project-title">Torq — Framework-Agnostic CUDA Graph Capture <span style="font-size: 14px; color: #777;">(in progress)</span></p>
+        <div class="skills">
+          <span class="skill">CUDA</span>
+          <span class="skill">C</span>
+          <span class="skill">Python</span>
+          <span class="skill">Compilers</span>
+        </div>
+        <p>
+          Driver-level interception for automatic CUDA graph capture and stream management. Hooks into CUDA APIs to enable composable, deterministic GPU pipelines.
+        </p>
+        <div class="project-links">
+          [<a href="https://github.com/abiel-almonte/torq">code</a>]
+        </div>
+      </td>
+    </tr>
   </tbody>
 </table>
