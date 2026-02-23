@@ -1,0 +1,79 @@
+---
+layout: project
+title: "pperf"
+subtitle: "Hierarchical Profiler for Quick Iteration"
+subtitle_tag: "blog"
+permalink: /projects/pperf
+date: 2026-02-23
+email: abielalmonte.eng@gmail.com
+code_url: https://github.com/abiel-almonte/pperf
+---
+<p><code>pperf</code> <span style="font-size: 0.7em; color: #777; font-weight: normal;">(<strong>purf</strong>)</span> is a small tool designed to find performance bottlenecks in <a href="/projects/flash-recon">flash-recon</a>. Applicable to any large complex system.</p>
+<h3>Ideation</h3>
+<p>The challenge in optimizing SLAM was in prioritizing what mattered. Initially it was straightforward: identify a hotpath, write a fused CUDA kernel, precompute when possible, repeat. 
+    However, after building the system, optimization became ambiguous. The impact of previous speedups were unclear — the numbers just wouldn't scale predictably.
+</p>
+    
+<p>I had a memory fragmentation issue causing OOM, and no idea where it came from.</p>
+
+<p>I observed how irreproducible conditions like GPU contention, allocation patterns, and dynamic shapes would degrade individual components in ways that propagated through the entire system,    eventually surfacing as dropped FPS and OOM crashes.</p>
+<p>So it was evident, to address this issue and other bottlenecks alike, I needed the context of the entire system integrated into a tight feedback loop to guide my optimizations. I define this <em><strong>context</strong></em> as an indicator of where, when, and how the issue occurred and impacted SLAM, giving a reliable read on its state pre and post optimization.</p>
+
+<p>Existing tools like <code>nsys</code> or <code>torch.profiler</code> operate at kernel level granularity — too noisy, <code>torch.cuda.memory_summary</code> ignores temporal structure, and <strong>no</strong> singular profiler would respect the unique global structure of my system's call stack — missing the <em><strong>context</strong></em> entirely.</p>
+
+<p>So the idea of <code>pperf</code>, the practical profiler, was born. A tool you can scatter around a few points of interest and iteratively probe deeper until the exact bottleneck is revealed.</p>
+
+<h3>Usage</h3>
+
+<p><code>pperf</code> does not generate a flat timeline of performance counters like traditional profilers, instead, a tree of the most critical <em><strong>instances</strong></em> from the bottom up depending on your defined metrics.</p>
+
+<pre><code class="language-python"># here is our metric:
+@register_metric("Memory Reserved", "GB")
+def _get_memory_reserved_gb():
+    b = torch.cuda.memory_reserved()
+    return float(b * 1e-9)
+
+# here is an instance:
+with pperf.trace(f"loop closure - kf: {n_keyframes}"):
+    ...
+</code></pre>
+
+<p>Mirroring the difference between lowering in LLVM versus MLIR. Traditional profilers single-shot the diagnosis, they dump every counter at the lowest granularity and leave you to correlate. 
+With <code>pperf</code>, we treat the system as a black box and progressively trace lower levels of abstraction until we hit the root cause — like a human-in-the-loop DFS, using <code>pperf</code> as the heuristic.
+</p>
+
+<p>For example, lets take a look at our SLAM:</p>
+
+<p>At the highest level it only has two paths — motion filter and steady state tracking:</p>
+<pre><code class="language-text">slam ──────────────────────────────────────────────│ 7.97 GB → 8.78 GB (0.8095 ∆)
+  └── track - kf: 13 ──────────────────────────────│ 7.97 GB → 8.78 GB (0.8095 ∆)
+</code></pre>
+<p><code>pperf</code> tells us memory reserved spiked in <code>track</code>, so lets look into that: </p>
+
+<pre><code class="language-text">slam ──────────────────────────────────────────────│ 7.97 GB → 8.78 GB (0.8095 ∆)
+  └── track - kf: 71 ──────────────────────────────│ 7.97 GB → 8.78 GB (0.8095 ∆)
+      └── loop closure - kf: 71 ───────────────────│ 7.97 GB → 8.78 GB (0.8095 ∆)
+</code></pre>
+
+<p>Now, its pointing to <code>loop closure</code>.</p>
+<p>After a few more iterations we get the following:</p>
+
+<pre><code class="language-text">slam ──────────────────────────────────────────────│ 7.97 GB → 8.78 GB (0.8095 ∆)
+  └── track - kf: 71 ──────────────────────────────│ 7.97 GB → 8.78 GB (0.8095 ∆)
+      └── loop closure - kf: 71 ───────────────────│ 7.97 GB → 8.78 GB (0.8095 ∆)
+          ├── droid - step: 1 ─────────────────────│ 8.37 GB → 8.78 GB (0.4048 ∆)
+          │   └── gru ─────────────────────────────│ 8.37 GB → 8.78 GB (0.4048 ∆)
+          │       └── gates ───────────────────────│ 8.37 GB → 8.78 GB (0.4048 ∆)
+          │           └── q-gate ──────────────────│ 8.37 GB → 8.78 GB (0.4048 ∆)
+          └── droid - step: 0 ─────────────────────│ 7.97 GB → 8.37 GB (0.4048 ∆)
+              └── gru ─────────────────────────────│ 7.97 GB → 8.37 GB (0.4048 ∆)
+                  └── gates ───────────────────────│ 7.97 GB → 8.37 GB (0.4048 ∆)
+                      └── q-gate ──────────────────│ 7.97 GB → 8.37 GB (0.4048 ∆)
+</code></pre>
+
+<p>So just in a few passes, the issue has been narrowed down to the q gate of the DROID's GRU, contributing to 100% of the total spike.
+We also learned that this happens during loop closure, a period where the batch size (number of edges) is at its greatest.</p>
+
+<hr>
+
+<p>With confidence, we can conclude that we are hitting OOM because PyTorch's caching allocator reserves large memory blocks for the q gate during loop closure — a temporary graph that gets discarded immediately after. These reservations persist and fragment the pool for subsequent allocations.</p>
