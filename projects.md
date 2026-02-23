@@ -22,7 +22,7 @@ wide: true
         <span class="skill">3D Reconstruction</span>
       </div>
       <p>
-          Monocular SLAM system built on DROID-SLAM with custom fused CUDA kernels for bundle adjustment, achieving 2.5cm ATE and 10ms median latency. Integrates DepthAnythingV2 and Gaussian Splatting on a single GPU. Surfaced performance problems that motivated torq and pperf.
+        Real-time monocular SLAM based on DROID-SLAM, built from the ground up with fused CUDA kernels for bundle adjustment — achieving 2.5cm ATE and 10ms median latency. Runs DepthAnythingV2 and Gaussian Splatting concurrently on a single GPU, creating a new optimization landscape that motivated <code>torq</code> and <code>pperf</code>.
       </p>
       <div class="project-links">
         [<a href="https://github.com/abiel-almonte/flash-recon">code</a>]
