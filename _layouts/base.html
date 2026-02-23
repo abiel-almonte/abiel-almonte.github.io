@@ -46,7 +46,16 @@
 
   <!-- Syntax highlighting -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-  <script>hljs.highlightAll();</script>
+  <script>
+    const pythonLang = hljs.getLanguage('python');
+    if (pythonLang) {
+      pythonLang.contains.unshift({
+        className: 'title.class_',
+        begin: /\b[A-Z][a-zA-Z0-9_]*(?=\s*\()/
+      });
+    }
+    hljs.highlightAll();
+  </script>
 
   <!-- MathJax for equations -->
   <script>
