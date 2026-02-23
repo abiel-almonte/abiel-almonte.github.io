@@ -9,7 +9,9 @@ wide: true
   <tbody>
     <tr>
       <td class="project-image-cell">
-        <img src="https://github.com/abiel-almonte/flash-recon/raw/master/images/placholder.png" alt="" class="project-image">
+        <video class="project-image" autoplay loop muted playsinline>
+          <source src="/images/flash-recon.mp4" type="video/mp4">
+        </video>
       </td>
       <td class="project-content-cell">
       <p class="project-title">Flash-Recon — Real-Time Monocular SLAM <span style="font-size: 14px; color: #777;">(in progress)</span></p>
@@ -20,7 +22,7 @@ wide: true
         <span class="skill">3D Reconstruction</span>
       </div>
       <p>
-          Monocular SLAM system built on DROID-SLAM with fused CUDA kernels for bundle adjustment, achieving 2.5cm ATE and 10ms median latency. Integrates DepthAnythingV2 and Gaussian Splatting on a single GPU. Surfaced performance problems that motivated torq and pperf.
+          Monocular SLAM system built on DROID-SLAM with custom fused CUDA kernels for bundle adjustment, achieving 2.5cm ATE and 10ms median latency. Integrates DepthAnythingV2 and Gaussian Splatting on a single GPU. Surfaced performance problems that motivated torq and pperf.
       </p>
       <div class="project-links">
         [<a href="https://github.com/abiel-almonte/flash-recon">code</a>]
@@ -29,7 +31,7 @@ wide: true
     </tr>
     <tr>
       <td class="project-image-cell">
-        <img src="https://github.com/abiel-almonte/torq/raw/master/images/diagram.png" alt="torq architecture" class="project-image" onerror="this.style.display='none'">
+        <img src="https://github.com/abiel-almonte/torq/raw/master/images/code.png" alt="torq architecture" class="project-image" onerror="this.style.display='none'">
       </td>
       <td class="project-content-cell">
         <p class="project-title">Torq — Graph Compiler with CUDA-Level Interception <span style="font-size: 14px; color: #777;">(in progress)</span></p>
