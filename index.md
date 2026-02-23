@@ -18,6 +18,7 @@ Previously interned at <strong>NVIDIA</strong> on the <a href="https://research.
 ---
 
 <h3> Activity</h3>
+- **Currently:** Working on flash-recon — real-time monocular SLAM with fused CUDA kernels, Gaussian Splatting, and DepthAnythingV2 on a single GPU. [link](/projects/flash-recon)
+- **Feb 2026:** Built pperf, a hierarchical profiler for hunting bottlenecks in complex GPU systems. [link](/projects/pperf)
 - **Feb 2026:** Published a technical deep dive showing how I reduced computer vision pipeline latency from 22ms to 11.3ms with microsecond consistency. [link](/projects/visionrt)
-- **Currently:** I'm working on a project for real-time 3D reconstruction. Providing [Splat-SLAM](https://github.com/google-research/Splat-SLAM) with a production-grade, low-latency infrastructure, from camera drivers to visualization.
 - **Nov 2025:** Excited to share that I will be joining Apple AIML this summer as a Machine Learning Intern, possibly working on efficient on-device computer vision!
