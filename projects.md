@@ -16,14 +16,14 @@ wide: true
       <td class="project-content-cell">
       <p class="project-title">Flash-Recon — Accelerating Dense Visual Odometry</p>
       <div class="skills">
-        <span class="skill">Visual SLAM</span>
+        <span class="skill">3D Reconstruction</span>
+        <span class="skill">SLAM</span>
+        <span class="skill">3DGS</span>
         <span class="skill">CUDA</span>
         <span class="skill">PyTorch</span>
-        <span class="skill">3D Reconstruction</span>
       </div>
       <p>
-        A few things to update:
-        Real-time monocular SLAM based on DROID-SLAM, built from the ground up with fused CUDA kernels for bundle adjustment. Runs SLAM, 3D Gaussian Splatting, and a live viewer concurrently on a single 16 GB GPU — achieving 0.025m ATE on EuRoC, 23.3 dB PSNR on TUM at 23 fps.
+        Real-time monocular SLAM based on DROID-SLAM, built from the ground up with fused CUDA kernels for bundle adjustment. Runs SLAM, 3D Gaussian Splatting, and a live viewer concurrently on a single 16 GB GPU — achieving <strong>0.025m ATE</strong> on EuRoC and <strong>23.3 dB PSNR</strong> on TUM at <strong>23 fps</strong>.
       </p>
       <div class="project-links">
         [<a href="/projects/flash-recon">blog post</a>]
