@@ -14,7 +14,7 @@ wide: true
         </video>
       </td>
       <td class="project-content-cell">
-      <p class="project-title">Flash-Recon — Real-Time Monocular SLAM <span style="font-size: 14px; color: #777;">(in progress)</span></p>
+      <p class="project-title">Flash-Recon — Accelerating Dense Visual Odometry</p>
       <div class="skills">
         <span class="skill">Visual SLAM</span>
         <span class="skill">CUDA</span>
@@ -22,9 +22,11 @@ wide: true
         <span class="skill">3D Reconstruction</span>
       </div>
       <p>
-        Real-time monocular SLAM based on DROID-SLAM, built from the ground up with fused CUDA kernels for bundle adjustment — achieving 2.5cm ATE and 10ms median latency. Runs DepthAnythingV2 and Gaussian Splatting concurrently on a single GPU, creating a new optimization landscape that motivated <code>torq</code> and <code>pperf</code>.
+        A few things to update:
+        Real-time monocular SLAM based on DROID-SLAM, built from the ground up with fused CUDA kernels for bundle adjustment. Runs SLAM, 3D Gaussian Splatting, and a live viewer concurrently on a single 16 GB GPU — achieving 0.025m ATE on EuRoC, 23.3 dB PSNR on TUM at 23 fps.
       </p>
       <div class="project-links">
+        [<a href="/projects/flash-recon">blog post</a>]
         [<a href="https://github.com/abiel-almonte/flash-recon">code</a>]
       </div>
       </td>

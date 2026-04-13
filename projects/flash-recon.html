@@ -1,0 +1,196 @@
+---
+layout: project
+title: "Flash-Recon"
+subtitle: "Accelerating Dense Visual Odometry"
+subtitle_tag: "blog"
+permalink: /projects/flash-recon
+date: 2026-04-13
+email: abielalmonte.eng@gmail.com
+code_url: https://github.com/abiel-almonte/flash-recon
+---
+
+<div class="figure">
+<video class="video-container" autoplay loop muted playsinline>
+    <source src="/images/demovid1.mp4" type="video/mp4">
+  </video>
+  <p class="figure-caption">Fig. 1 Reconstructions on TartanAir sequences (ME003, MH004, MH006)</p>
+</div>
+
+<p>Flash-Recon runs dense monocular SLAM and Gaussian Splatting jointly, producing live 3D reconstructions on a single consumer GPU.
+    The system is designed performance-first, the core optimization targets visual odometry — <code>[photon -> pose]</code> — since it runs per-frame and gates everything downstream.
+    Fast odometry means Gaussian Splatting updates stream to the viewer asynchronously, keeping the full pipeline real-time.</p>
+
+<div class="figure">
+<video class="video-container" autoplay loop muted playsinline style="aspect-ratio: 1920/518;">
+    <source src="/images/demovid2.mp4" type="video/mp4">
+    </video>
+<p class="figure-caption">Fig. 2 Real-time on EuRoC MH_04_difficult</p>
+</div>
+
+<table>
+    <thead>
+    <tr>
+        <th></th>
+        <th>DROID-SLAM</th>
+        <th>MonoGS</th>
+        <th>flash-recon</th>
+    </tr>
+    </thead>
+    <tbody>
+    <tr>
+        <td><strong>GPUs</strong></td>
+        <td>2x RTX 3090</td>
+        <td>1x RTX 4090</td>
+        <td><strong>1x RTX 4070 Ti Super</strong></td>
+    </tr>
+    <tr>
+        <td><strong>VRAM</strong></td>
+        <td>48 GB</td>
+        <td>24 GB</td>
+        <td><strong>16 GB</strong></td>
+    </tr>
+    <tr>
+        <td><strong>SLAM</strong></td>
+        <td><strong style="color: #27ae60;">&#x2713;</strong></td>
+        <td><strong style="color: #27ae60;">&#x2713;</strong></td>
+        <td><strong style="color: #27ae60;">&#x2713;</strong></td>
+    </tr>
+    <tr>
+        <td><strong>3DGS</strong></td>
+        <td>&#x2717;</td>
+        <td><strong style="color: #27ae60;">&#x2713;</strong></td>
+        <td><strong style="color: #27ae60;">&#x2713;</strong></td>
+    </tr>
+    <tr>
+        <td><strong>Render</strong></td>
+        <td>&#x2717;</td>
+        <td>&#x2717;</td>
+        <td><strong style="color: #27ae60;">&#x2713;</strong></td>
+    </tr>
+    <tr>
+        <td><strong>TartanAir FPS</strong></td>
+        <td><strong>8 fps</strong></td>
+        <td>—</td>
+        <td><strong>8 fps</strong></td>
+    </tr>
+    <tr>
+        <td><strong>EuRoC FPS</strong></td>
+        <td><strong>20 fps</strong></td>
+        <td>—</td>
+        <td>13 fps</td>
+    </tr>
+    <tr>
+        <td><strong>EuRoC ATE</strong></td>
+        <td><strong>0.022 m</strong></td>
+        <td>2.033 m</td>
+        <td>0.025 m</td>
+    </tr>
+    <tr>
+        <td><strong>TUM FPS</strong></td>
+        <td>—</td>
+        <td>3.2 fps</td>
+        <td><strong>23 fps</strong></td>
+    </tr>
+    <tr>
+        <td><strong>TUM ATE</strong></td>
+        <td>—</td>
+        <td>1.85 cm</td>
+        <td><strong>1.68 cm</strong></td>
+    </tr>
+    <tr>
+        <td><strong>TUM PSNR</strong></td>
+        <td>—</td>
+        <td>23.02 dB</td>
+        <td><strong>23.3 dB</strong></td>
+    </tr>
+    </tbody>
+</table>
+
+
+<details>
+    <summary>EuRoC per-sequence results</summary>
+    <table>
+        <thead>
+        <tr>
+            <th>Sequence</th>
+            <th>DROID-SLAM ATE (m)</th>
+            <th>MonoGS ATE (m)</th>
+            <th>flash-recon ATE (m)</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr><td>MH_01_easy</td><td><strong>0.013</strong></td><td>0.121</td><td><strong>0.013</strong></td></tr>
+        <tr><td>MH_02_easy</td><td>0.014</td><td>0.141</td><td><strong>0.012</strong></td></tr>
+        <tr><td>MH_03_medium</td><td><strong>0.022</strong></td><td>2.197</td><td>0.024</td></tr>
+        <tr><td>MH_04_difficult</td><td><strong>0.043</strong></td><td>4.515</td><td>0.062</td></tr>
+        <tr><td>MH_05_difficult</td><td><strong>0.043</strong></td><td>3.190</td><td>0.053</td></tr>
+        <tr><td>V1_01_easy</td><td>0.037</td><td>—</td><td><strong>0.036</strong></td></tr>
+        <tr><td>V1_02_medium</td><td><strong>0.012</strong></td><td>—</td><td><strong>0.012</strong></td></tr>
+        <tr><td>V1_03_difficult</td><td>0.020</td><td>—</td><td><strong>0.019</strong></td></tr>
+        <tr><td>V2_01_easy</td><td><strong>0.017</strong></td><td>—</td><td>0.018</td></tr>
+        <tr><td>V2_02_medium</td><td>0.013</td><td>—</td><td><strong>0.010</strong></td></tr>
+        <tr><td>V2_03_difficult</td><td><strong>0.014</strong></td><td>—</td><td>0.016</td></tr>
+        <tr><td><strong>Average</strong></td><td><strong>0.022</strong></td><td>2.033</td><td>0.025</td></tr>
+        </tbody>
+    </table>
+    </details>
+
+<p><small>
+    DROID-SLAM figures from <em>Teed &amp; Deng, 2022</em>.&nbsp;
+    MonoGS figures from <em>Matsuki, Murai et al., 2024</em>, and <em>Li et al., 2025</em>.
+    TUM results on fr3/office.
+</small></p>
+
+<div class="figure">
+    <video class="video-container" autoplay loop muted playsinline style="aspect-ratio: 1920/940;" >
+        <source src="/images/demovid3.mp4" type="video/mp4">
+        </video>
+    <p class="figure-caption">Fig. 3 Reconstruction on TUM fr3/office </p>
+</div>
+
+
+<h3>How it works</h3>
+
+<p>Flash-Recon reimplements <a href="https://github.com/princeton-vl/DROID-SLAM">DROID-SLAM</a> from the ground up.
+    This means, Lie group operations, bundle adjustment, factor graphs, and system orchestration.</p>
+
+<p>The system runs three threads on a single GPU, communicating through lock-free queues and read-only snapshots:</p>
+
+<ol>
+    <li><strong>Slammer</strong> — processes every frame through a learned feature extractor,
+        computes optical flow between frames, and solves bundle adjustment to refine camera poses and depth for keyframes.</li>
+    <li><strong>Splatter</strong> — picks up new poses, backprojects their depth maps into 3D Gaussians,
+        and optimizes them with differentiable rasterization. Deforming the previous gaussians inplace.</li>
+    <li><strong>Viewer</strong> — streams Gaussian snapshots over WebSocket to a browser,
+        where WebGL renders the reconstruction live. 32 bytes per Gaussian, packed binary.</li>
+</ol>
+
+<p><small><em>Rasterization inherited from <a href="https://github.com/nerfstudio-project/gsplat">nerfstudio-project/gsplat</a>.</em></small>
+<small><em>Viewer modifies <a href="https://github.com/antimatter15/splat">antimatter15/splat</a>.</em></small></p>
+
+
+<p>The splatter yields GPU time to the slammer when both are active, so
+    SLAM accuracy is never sacrificed for prettier Gaussians.</p>
+
+<h3>Where the speed comes from</h3>
+
+<p>One of DROID-SLAM's main bottlenecks is bundle adjustment, the process of solving a sparse linear system over the pose graph
+    every time a new keyframe arrives. The original runs this across two 3090s.</p>
+
+<p>Flash-Recon rewrites the BA solver as a custom CUDA kernel using Schur complement decomposition,
+    bringing the per-call cost from <strong>4.98 ms down to 1.34 ms</strong> on EuRoC.</p>
+
+<p>The rest is system design. Three threads share a single GPU through lock-free queues
+    and read-only snapshots. No mutexes, no multi-GPU synchronization.
+    When SLAM refines poses, Gaussians deform in-place to stay consistent avoiding re-initialization.</p>
+
+<h3>Is there more headroom?</h3>
+
+<p>Yes, there might! The correlation kernel that computes the correlation volume for RAFT to estimate optical flow
+    is inherited from DROID-SLAM and is the next target for optimization. </p>
+
+<p> Ideally we can exploit the assu/cmption that optical flow is spatially smooth.
+    So, neighboring pixels have similar flow vectors, which means neighboring threads
+    need overlapping image patches. </p>
+
+<p> With this setup we can cooperatively load image patches instead of loading each patch independently, cutting global memory traffic significantly.</p>
