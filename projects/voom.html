@@ -109,7 +109,7 @@ code_url: https://github.com/abiel-almonte/voom
     </small></p>
 </details>
 
-<p>VOOM requires much less resources than published SOTA, but I would refrain from calling it a <em>tradeoff</em>, as I believe that a higher mIoU can be achieved with a more sophisticated training recipe. I found that architecture size had very little impact on the model's performance, it was the factorization and training methodology that was the most important.</p>
+<p>VOOM sits alone in the sub 0.5 GB regime which is over 10x less memory than any published method, at the cost of ~6 mIoU. However, I would refrain from calling it a <em>tradeoff</em>, as I believe that a higher mIoU can be achieved with a more sophisticated training recipe. I found that architecture size had very little impact on the model's performance, it was the factorization and training methodology that was the most important.</p>
 <p>This could stem from 3D geometry being unrecoverable with a single view, the model needs to learn that objects like cars and buildings are not just 2.5D billboards. So data quality and training supervision become the bottlenecks, the architecture just needs to not waste capacity on learning occluded geometry from a single view.</p>
 
 
@@ -126,7 +126,7 @@ code_url: https://github.com/abiel-almonte/voom
 <p>Starting with an elaborate version, then dropping anything that doesn't measurably move IoU/mIoU. What's left is what's load-bearing for performance while remaining small enough to run on a Jetson and tight enough that there's nothing left to obviously cut.</p>
 
 <details>
-    <summary>The fattiest cuts</summary>
+    <summary>The biggest cuts</summary>
     <ul>
         <li><strong>Photometric and novel-view supervision.</strong> Originally done to render the BEV with real color, however as expected the render only made sense from camera view and it didn't pull its weight on IoU/mIoU.</li>
         <li><strong>Multi-level depth distribution.</strong> The first version predicted depth at four feature scales and fused the splatted volumes hierarchically. Inspired by the coarse-to-fine design that SurroundOcc employs, but this just resulted in much longer inference and training time with little impact on IoU. </li>
