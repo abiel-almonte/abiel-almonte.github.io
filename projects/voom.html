@@ -1,0 +1,219 @@
+---
+layout: project
+title: "VOOM"
+subtitle: "VOlumetric Occupancy from Monocular Input"
+subtitle_tag: "blog"
+permalink: /projects/voom
+date: 2026-05-09
+email: abielalmonte.eng@gmail.com
+code_url: https://github.com/abiel-almonte/voom
+---
+
+<div class="figure">
+<img src="https://raw.githubusercontent.com/abiel-almonte/voom/main/assets/demo.gif" alt="voom demo" class="project-image" style="box-shadow: none;" onerror="this.style.display='none'">
+<p class="figure-caption">Fig. 1 Input (left) and Semantic BEV (right) on SemanticKITTI seq 08</p>
+</div>
+
+
+<p>VOOM predicts a 3D semantic occupancy grid from a front facing RGB camera, and it runs at <strong>15.5 FPS on a Jetson Orin Nano</strong> at 16 W and 400 MB of VRAM! </p>
+<p>VOOM's edge is that it runs for free. It's the only method in thVOOM architecture
+    diagramis latency-power class doing this task at all. VOOM picks up relevant occupancy with an IoU of 30-31. However it slides on the semantic accuracy with an mIoU of 8-9.</p>
+
+<details>
+    <summary>Per-class IoU on SemanticKITTI seq 08</summary>
+    <table>
+        <thead>
+        <tr>
+            <th>Class</th>
+            <th>IoU</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr><td>road</td><td><strong>0.430</strong></td></tr>
+        <tr><td>sidewalk</td><td>0.221</td></tr>
+        <tr><td>terrain</td><td>0.204</td></tr>
+        <tr><td>car</td><td>0.189</td></tr>
+        <tr><td>vegetation</td><td>0.175</td></tr>
+        <tr><td>parking</td><td>0.132</td></tr>
+        <tr><td>truck</td><td>0.076</td></tr>
+        <tr><td>fence</td><td>0.068</td></tr>
+        <tr><td>motorcycle</td><td>0.038</td></tr>
+        <tr><td>other-vehicle</td><td>0.032</td></tr>
+        <tr><td>building</td><td>0.027</td></tr>
+        <tr><td>pole</td><td>0.015</td></tr>
+        <tr><td>trunk</td><td>0.009</td></tr>
+        <tr><td>bicycle</td><td>0.007</td></tr>
+        <tr><td>bicyclist</td><td>0.006</td></tr>
+        <tr><td>traffic-sign</td><td>0.003</td></tr>
+        <tr><td>person</td><td>0.0004</td></tr>
+        <tr><td>other-ground</td><td>0.000</td></tr>
+        <tr><td>motorcyclist</td><td>0.000</td></tr>
+        <tr><td><strong>mIoU</strong></td><td><strong>0.086</strong></td></tr>
+        </tbody>
+    </table>
+</details>
+
+<h3>Live Demos</h3>
+
+<div class="figure">
+<video class="video-container" autoplay loop muted playsinline style="aspect-ratio: 1280/960;">
+    <source src="/images/voom_demo.mp4" type="video/mp4">
+</video>
+<p class="figure-caption">Fig. 2 Live inference & rendering on Jetson — Orlando (top) and Miami (bottom).</p>
+</div>
+
+<p>Camera mounted to the roof of the car, connected to a Jetson Orin Nano inside with a field monitor. Left panels show the camera feed, right panels show the occupancy grid rendered in real-time via OpenGL.</p>
+
+<details>
+    <summary>Hardware setup</summary>
+    <div style="display: flex; gap: 16px; margin-top: 12px;">
+        <img src="/images/voom_setup1.jpg" alt="Camera mount on roof" style="width: 50%; border-radius: 6px;">
+        <img src="/images/voom_setup2.jpg" alt="Jetson with field monitor" style="width: 50%; border-radius: 6px;">
+    </div>
+    <p class="figure-caption">Suction-cup camera mount on the roof (left) and Jetson Orin Nano with field monitor (right).</p>
+</details>
+
+<h3>How Efficient?</h3>
+<div class="figure">
+    <img src="https://raw.githubusercontent.com/abiel-almonte/voom/main/assets/mem.svg" alt="Memory vs mIoU comparison" class="project-image">
+    <p class="figure-caption">Fig. 3 Inference memory vs mIoU on SemanticKITTI</p>
+</div>
+
+<details>
+    <summary>Accuracy comparison on SemanticKITTI</summary>
+    <table>
+        <thead>
+        <tr>
+            <th>Method</th>
+            <th>Volume</th>
+            <th>IoU</th>
+            <th>mIoU</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr><td>L2COcc-D</td><td>51.2 m</td><td><strong>45.37</strong></td><td><strong>18.18</strong></td></tr>
+        <tr><td>L2COcc-C</td><td>51.2 m</td><td>44.31</td><td>17.03</td></tr>
+        <tr><td>CGFormer</td><td>51.2 m</td><td>44.41</td><td>16.63</td></tr>
+        <tr><td>MonoOcc-L</td><td>51.2 m</td><td>&mdash;</td><td>15.63</td></tr>
+        <tr><td>StereoScene</td><td>51.2 m</td><td>43.34</td><td>15.36</td></tr>
+        <tr><td>Symphonies</td><td>51.2 m</td><td>42.19</td><td>15.04</td></tr>
+        <tr><td>MonoOcc-S</td><td>51.2 m</td><td>&mdash;</td><td>13.80</td></tr>
+        <tr><td>MonoScene</td><td>51.2 m</td><td>36.86</td><td>11.08</td></tr>
+        <tr><td><strong>voom</strong></td><td>25.6 m</td><td>31.4</td><td>8.6</td></tr>
+        </tbody>
+    </table>
+
+    <p><small>
+        MonoScene <em>Cao &amp; de Charette, 2022</em>.&nbsp;
+        MonoOcc-S <em>Zheng et al., 2024</em> results are on SemanticKITTI test set.
+        VOOM results on SemanticKITTI sequence 08 as validation.
+    </small></p>
+</details>
+
+<p>VOOM requires much less resources than published SOTA, but I would refrain from calling it a <em>tradeoff</em>, as I believe that a higher mIoU can be achieved with a more sophisticated training recipe. I found that architecture size had very little impact on the model's performance, it was the factorization and training methodology that was the most important.</p>
+<p>This could stem from 3D geometry being unrecoverable with a single view, the model needs to learn that objects like cars and buildings are not just 2.5D billboards. So data quality and training supervision become the bottlenecks, the architecture just needs to not waste capacity on learning occluded geometry from a single view.</p>
+
+
+<h3>Design Decisions</h3>
+<h4>Lifting via projection, not attention:</h4>
+
+<p>VOOM takes inspiration from <a href="https://arxiv.org/abs/2008.05711">Lift-Splat-Shoot</a> <em>(Philion &amp; Fidler, 2020)</em>, to predict a per-pixel depth distribution and push features into 3D voxels along each ray weighted by that distribution. The unprojection itself is done explicitly with camera intrinsics.</p>
+<p>Modern alternatives use deformable attention variants, while more expressive, it is more parameter efficient to just focus on learning representation rather than relearning perspective.</p>
+
+<p>Simply, VOOM is this LSS-style head on a pretrained depth estimation model (<a href="https://github.com/facebookresearch/dinov2#pretrained-heads---depth-estimation" target="_blank">DPT head + DINOv2</a>).</p>
+<h4>Lean is Law:</h4>
+
+<p>I underwent the subtractive process of finding how few parameters and operations can I keep within the same factorization and still hit a reasonable per-class IoU.</p> 
+<p>Starting with an elaborate version, then dropping anything that doesn't measurably move IoU/mIoU. What's left is what's load-bearing for performance while remaining small enough to run on a Jetson and tight enough that there's nothing left to obviously cut.</p>
+
+<details>
+    <summary>The fattiest cuts</summary>
+    <ul>
+        <li><strong>Photometric and novel-view supervision.</strong> Originally done to render the BEV with real color, however as expected the render only made sense from camera view and it didn't pull its weight on IoU/mIoU.</li>
+        <li><strong>Multi-level depth distribution.</strong> The first version predicted depth at four feature scales and fused the splatted volumes hierarchically. Inspired by the coarse-to-fine design that SurroundOcc employs, but this just resulted in much longer inference and training time with little impact on IoU. </li>
+        <li><strong>Deep 3D Conv refine.</strong> The first refine head was a multi-block 3D ResNet on the splatted volume. Pruning to a single residual block had no measurable IoU cost and a huge win on params and Jetson latency.</li>
+        <li><strong>Doubling the DPT head's channels.</strong> I believed that depth and semantics shared too much capacity, I doubled the channels and split the terminal feat to specialize for depth and semantic supervision. But this resulted in no significant IoU gain with 1.8x more parameters.</li>
+    </ul>
+</details>
+
+<div class="figure">
+    <img src="/images/voom.svg" alt="VOOM architecture diagram" class="project-image">
+    <p class="figure-caption">Fig. 4 Model architecture (rev. 14)</p>
+</div>
+
+
+<h3>Inference</h3>
+
+<p>The biggest wins came from leaning out the model, especially the 3D refinement block, then running everything in half precision, and a <a href="https://github.com/abiel-almonte/voom/blob/main/voom/ops.cu">custom lift-splat kernel</a>.</p>
+<p>The standard lift materializes a <code>[B, C, D_bins, H, W]</code> tensor where image features get replicated across every depth bin before scatter-adding into voxels, and that's the dominant memory cost on the Jetson. Since the camera intrinsics don't change at runtime, I precomputed which (pixel, depth bin) pairs project into each voxel, packed them into a flat lookup, and the kernel gathers those directly into the voxel grid, never materializing the big tensor. The fp16 version stores context in NHWC for contiguous per-pixel reads and uses 16-byte vectorized loads to pull 8 halves at a time.</p>
+
+<p>TensorRT did the rest. I exported the model to ONNX and let <code>trtexec</code> compile it into an engine for the Jetson, which handles operator fusion, kernel selection, and memory layout tuning for the specific hardware.</p>
+
+<table>
+    <thead>
+    <tr>
+        <th>Hardware</th>
+        <th>Runtime</th>
+        <th>Latency</th>
+        <th>FPS</th>
+        <th>VRAM</th>
+        <th>Power</th>
+    </tr>
+    </thead>
+    <tbody>
+    <tr>
+        <td>RTX 5080</td>
+        <td>PyTorch FP16</td>
+        <td>14.8 ms</td>
+        <td>67.8</td>
+        <td>&mdash;</td>
+        <td>&mdash;</td>
+    </tr>
+    <tr>
+        <td>Jetson Orin Nano 8GB</td>
+        <td>PyTorch FP16</td>
+        <td>169.4 ms</td>
+        <td>5.9</td>
+        <td>&mdash;</td>
+        <td>&mdash;</td>
+    </tr>
+    <tr>
+        <td><strong>Jetson Orin Nano 8GB</strong></td>
+        <td><strong>TensorRT FP16</strong></td>
+        <td><strong>64.4 ms</strong></td>
+        <td><strong>15.5</strong></td>
+        <td><strong>400 MB</strong></td>
+        <td><strong>16 W</strong></td>
+    </tr>
+    </tbody>
+</table>
+
+<details>
+    <summary>Per-stage latency breakdown (Jetson, TensorRT FP16)</summary>
+    <table>
+        <thead>
+        <tr>
+            <th>Stage</th>
+            <th>Time</th>
+            <th>%</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr><td>ViT</td><td>14.35 ms</td><td>22.1%</td></tr>
+        <tr><td>DPT</td><td>13.10 ms</td><td>20.2%</td></tr>
+        <tr><td>LSS Voxelization</td><td>14.38 ms</td><td>22.2%</td></tr>
+        <tr><td>3D Refinement</td><td>22.97 ms</td><td>35.4%</td></tr>
+        <tr><td><strong>total</strong></td><td><strong>64.85 ms</strong></td><td>100%</td></tr>
+        </tbody>
+    </table>
+</details>
+
+
+<h3>VOOMv2?</h3>
+
+A continuation of VOOM would likely entail:
+<ul>
+    <li>INT8 quantization with TensorRT using relevant calibration data from deployed environment.</li>
+    <li>Incorporating a LiDAR auxiliary supervision to help increase mIoU, a strategy inspired by L2COcc.</li>
+    <li>Accelerate the Refinement Block with sparse 3D convolutions because most voxels are empty.</li>
+</ul>
