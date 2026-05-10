@@ -678,6 +678,10 @@ main {
   margin-bottom: 10px;
 }
 
+.project-title strong {
+  font-weight:600;
+}
+
 .skills {
   margin: 8px 0;
 }
