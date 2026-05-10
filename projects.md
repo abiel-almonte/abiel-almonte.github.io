@@ -9,6 +9,28 @@ wide: true
   <tbody>
     <tr>
       <td class="project-image-cell">
+        <img src="https://raw.githubusercontent.com/abiel-almonte/voom/main/assets/thumb_cream.gif" alt="voom demo" class="project-image" style="max-width: 320px;" onerror="this.style.display='none'">
+      </td>
+      <td class="project-content-cell">
+      <p class="project-title"><strong>VOOM</strong> — <strong>VO</strong>lumetric <strong>O</strong>ccupancy from <strong>M</strong>onocular Input</p>
+      <div class="skills">
+        <span class="skill">Occupancy Prediction</span>
+        <span class="skill">CUDA</span>
+        <span class="skill">TensorRT</span>
+        <span class="skill">PyTorch</span>
+        <span class="skill">Edge AI</span>
+      </div>
+      <p>
+        Real-time semantic 3D occupancy network for edge deployment. Runs at <strong>15 FPS</strong> on a Jetson Orin Nano, drawing <strong>400 MB</strong> and <strong>16 W</strong>. Custom CUDA kernel replaces the standard scatter-based voxelization. <strong>31.6 IoU</strong> / <strong>8.4 mIoU</strong> on SemanticKITTI sequence 08.
+      </p>
+      <div class="project-links">
+        [<a href="/projects/voom">blog post</a>]
+        [<a href="https://github.com/abiel-almonte/voom">code</a>]
+      </div>
+      </td>
+    </tr>
+      <tr>
+      <td class="project-image-cell">
         <video class="project-image" autoplay loop muted playsinline>
           <source src="/images/flash-recon.mp4" type="video/mp4">
         </video>
@@ -31,7 +53,7 @@ wide: true
       </div>
       </td>
     </tr>
-    <tr>
+    <!-- <tr>
       <td class="project-image-cell">
         <img src="https://github.com/abiel-almonte/torq/raw/master/images/code.png" alt="torq architecture" class="project-image" onerror="this.style.display='none'">
       </td>
@@ -51,7 +73,7 @@ wide: true
           [<a href="https://github.com/abiel-almonte/torq">code</a>]
         </div>
       </td>
-    </tr>
+    </tr> -->
     <tr>
       <td class="project-image-cell">
         <img src="https://github.com/abiel-almonte/pperf/raw/master/images/output.png" alt="pperf output" class="project-image" onerror="this.style.display='none'">
