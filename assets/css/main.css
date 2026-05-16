@@ -413,6 +413,7 @@ main {
   border: none;
   border-top: 1px solid #000;
   margin: 48px 0;
+  clear: both;
 }
 
 /* ============================================
@@ -495,6 +496,7 @@ main {
   margin: 32px 0;
   border-radius: 0 4px 4px 0;
   font-size: 15px;
+  clear: both;
 }
 
 .content .callout p:last-child {
@@ -625,9 +627,10 @@ main {
 @media (min-width: 768px) {
   .profile-block {
     float: right;
-    margin: 0 0 20px 80px;
+    margin: 0 0 20px 40px;
     width: 30%;
     min-width: 330px;
+    height: fit-content;
   }
 }
 
