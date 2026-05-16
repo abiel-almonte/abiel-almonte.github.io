@@ -21,7 +21,7 @@ wide: true
         <span class="skill">Edge AI</span>
       </div>
       <p>
-        Real-time semantic 3D occupancy network for edge deployment. Runs at <strong>15 FPS</strong> on a Jetson Orin Nano, drawing <strong>400 MB</strong> and <strong>16 W</strong>. Custom CUDA kernel replaces the standard scatter-based voxelization. <strong>31.6 IoU</strong> / <strong>8.4 mIoU</strong> on SemanticKITTI sequence 08.
+        Real-time semantic 3D occupancy network for edge deployment. Runs at <strong>15 FPS</strong> on a Jetson Orin Nano, drawing <strong>400 MB</strong> and <strong>16 W</strong>. Custom CUDA kernel replaces the standard scatter-based voxelization. <strong>31.6 IoU</strong> / <strong>8.6 mIoU</strong> on SemanticKITTI sequence 08.
       </p>
       <div class="project-links">
         [<a href="/projects/voom">blog post</a>]
@@ -47,6 +47,7 @@ wide: true
       <p>
         Real-time monocular SLAM based on DROID-SLAM, built from the ground up with fused CUDA kernels for bundle adjustment. Runs SLAM, 3D Gaussian Splatting, and a live viewer concurrently on a single 16 GB GPU — achieving <strong>0.025m ATE</strong> on EuRoC and <strong>23.3 dB PSNR</strong> on TUM at <strong>23 fps</strong>.
       </p>
+      <p><small><em>Awarded Most Innovative Project — FIU Senior Design 2026.</em></small></p>
       <div class="project-links">
         [<a href="/projects/flash-recon">blog post</a>]
         [<a href="https://github.com/abiel-almonte/flash-recon">code</a>]
@@ -129,6 +130,7 @@ wide: true
         <p>
           High-performance GPU prefix sum achieving 94% of theoretical DRAM bandwidth. Uses Kogge-Stone scans and decoupled lookback for cross-CTA communication. Beats NVIDIA CUB at mid-range sizes.
         </p>
+        <p><small><em>Reviewed by Georgii Evtushenko (NVIDIA).</em></small></p>
         <div class="project-links">
           [<a href="https://github.com/abiel-almonte/inclusive-scan">code</a>]
         </div>
