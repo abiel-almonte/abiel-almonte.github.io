@@ -6,6 +6,7 @@ description: >-
 baseurl: ""
 url: "https://abiel-almonte.github.io"
 github_username: abiel-almonte
+linkedin_username: abiel-almonte
 
 # Author info (used in layouts)
 author:

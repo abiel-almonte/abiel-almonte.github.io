@@ -617,22 +617,43 @@ main {
    PAGE-SPECIFIC: Home/Index
    ============================================ */
 
+.profile-block {
+  text-align: center;
+  margin-bottom: 30px;
+}
+
+@media (min-width: 768px) {
+  .profile-block {
+    float: right;
+    margin: 0 0 20px 80px;
+    width: 30%;
+    min-width: 330px;
+  }
+}
+
 .profile-img {
   display: block;
-  margin: 0 0 50px 0;
   max-width: 100%;
   width: 300px;
+  margin: 0 auto 8px auto;
   padding: 20px;
+  padding-bottom: 0;
 }
 
 @media (min-width: 768px) {
   .profile-img {
-    float: right;
-    margin: 0 0 50px 80px;
+    width: 100%;
     padding-left: 20px;
-    width: 30%;
-    min-width: 330px;
   }
+}
+
+a.profile-link {
+  display: block;
+  text-align: center;
+  font-family: ui-monospace, 'SF Mono', 'Menlo', monospace;
+  font-size: 14px;
+  color: #555;
+  text-decoration: none;
 }
 
 /* ============================================
