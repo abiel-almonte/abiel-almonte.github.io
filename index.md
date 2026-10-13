@@ -5,7 +5,8 @@ permalink: /
 
 <div class="profile-block">
   <img src="/abiel_newphoto.png" alt="" class="profile-img">
-  <a href="https://www.linkedin.com/in/abiel-almonte/" class="profile-link">LinkedIn</a>
+    <a href="https://www.linkedin.com/in/abiel-almonte/" class="profile-link">LinkedIn</a>
+    <a href="https://github.com/abiel-almonte" class="profile-link">GitHub</a>
 </div>
 
 Helloo I'm Abiel. An incoming machine learning engineer at **Apple** working on efficient on-device perception for the home.
@@ -20,6 +21,9 @@ I love deploying models for **3D perception on tiny chips!** Usually this involv
 
 <h3> Activity</h3>
 [//]: # (- **Oct 2026:** Joined **Apple** as a Machine Learning Engineer, working on efficient perception for the home.)
+
+- **Currently:** Training **EpiK**. A fast, nano-sized depth model self-supervised by **Epi**polar geometry, conditioned on the camera's intrinsics **K**.
+
 - **Sept 2026:** Trained and shipped a more accurate object detector in **iOS 27**, tailored to the compute and memory constraints of Apple Silicon.
 - **May 2026:** Joined **Apple** as a Machine Learning Intern.
 - **May 2026:** Published [**VOOM<sub>0.1</sub>**](/projects/voom). First iteration of a monocular semantic 3D occupancy network running at **15.6 FPS on a 16W** Jetson Orin Nano.

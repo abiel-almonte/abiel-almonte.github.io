@@ -656,8 +656,8 @@ main {
 }
 
 a.profile-link {
-  display: block;
-  text-align: center;
+  display: inline-block;
+  margin: 0 10px;
   font-family: ui-monospace, 'SF Mono', 'Menlo', monospace;
   font-size: 14px;
   color: #555;
