@@ -12,7 +12,7 @@ wide: true
         <img src="https://raw.githubusercontent.com/abiel-almonte/voom/main/assets/thumb_cream.gif" alt="voom demo" class="project-image" style="max-width: 320px;" onerror="this.style.display='none'">
       </td>
       <td class="project-content-cell">
-      <p class="project-title"><strong>VOOM</strong> — <strong>VO</strong>lumetric <strong>O</strong>ccupancy from <strong>M</strong>onocular Input</p>
+      <p class="project-title"><strong>VOOM<sub>0.1</sub></strong> — <strong>VO</strong>lumetric <strong>O</strong>ccupancy from <strong>M</strong>onocular Input</p>
       <div class="skills">
         <span class="skill">Occupancy Prediction</span>
         <span class="skill">CUDA</span>

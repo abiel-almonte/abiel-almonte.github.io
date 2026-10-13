@@ -8,17 +8,24 @@ permalink: /
   <a href="https://www.linkedin.com/in/abiel-almonte/" class="profile-link">LinkedIn</a>
 </div>
 
-Hello, I'm Abiel. I am an undergraduate computer engineer at [FIU](https://cec.fiu.edu/).
+Helloo I'm Abiel. An incoming machine learning engineer at **Apple** working on efficient on-device perception for the home.
 
-Currently a Machine Learning Intern at **Apple** working on efficient computer vision models. Previously at **NVIDIA** and FIU's **Applied Research Center**.
+Previously I interned at Apple, NVIDIA, and FIU's Applied Research Center.
+ 
+I love deploying models for **3D perception on tiny chips!** Usually this involves rethinking model architectures with the compiler, runtime, and accelerator constraints in mind. I enjoy targeting bottlenecks with well-motivated kernels, quantization, and compiler passes.
 
-My interest lies in model co-design to accelerate machine learning inference. Motivated by the human experience my work can bring to the end-user and the real-time feedback loop of collaborating on unsolved problems.
+> Outside of engineering, I like experimental music, [surrealist art](https://www.moma.org/collection/works/79933), and [thoughtfully designed clothes](https://www.songforthemute.com/still-life).
 
 ---
 
 <h3> Activity</h3>
-- **May 2026:** Joined Apple as a Machine Learning Intern.
-- **May 2026:** Published the VOOM blog, real-time semantic 3D occupancy from monocular input on a Jetson Orin Nano. [link](/projects/voom)
-- **Apr 2026:** Published the flash-recon blog, A real-time monocular SLAM + 3DGS system on a single GPU with custom fused CUDA kernels. [link](/projects/flash-recon)
-- **Feb 2026:** Built pperf, a hierarchical profiler for hunting bottlenecks in complex GPU systems. [link](/projects/pperf)
-- **Feb 2026:** Published a technical deep dive showing how I reduced computer vision pipeline latency from 22ms to 11.3ms with microsecond consistency. [link](/projects/visionrt)
+[//]: # (- **Oct 2026:** Joined **Apple** as a Machine Learning Engineer, working on efficient perception for the home.)
+- **Sept 2026:** Trained and shipped a more accurate object detector in **iOS 27**, tailored to the compute and memory constraints of Apple Silicon.
+- **May 2026:** Joined **Apple** as a Machine Learning Intern.
+- **May 2026:** Published [**VOOM<sub>0.1</sub>**](/projects/voom). First iteration of a monocular semantic 3D occupancy network running at **15.6 FPS on a 16W** Jetson Orin Nano.
+- **Apr 2026:** **Flash-Recon** **won *Most Innovative Project***, one of five teams recognized among 120+ at FIU's Engineering Senior Design Showcase.
+- **Apr 2026:** Published [**Flash-Recon**](/projects/flash-recon). A real-time monocular SLAM and Gaussian Splatting system featuring custom fused CUDA kernels for faster dense bundle adjustment.
+- **Feb 2026:** Built [pperf](/projects/pperf), a hierarchical profiler for hunting bottlenecks in complex GPU systems.
+- **Feb 2026:** Published a deep dive on deterministic vision inference, reducing pipeline latency from 22ms to 11.3ms with microsecond-level predictability. [blog](/projects/visionrt)
+- **May 2025:** Joined **NVIDIA** as a Software Engineering Intern, working on ML infrastructure and VLM deployment.
+- **Nov 2023:** Joined FIU's Applied Research Center, working on LLM retrieval and serving infrastructure.
